@@ -13,12 +13,12 @@ mv listlog.sh /usr/local/bin/listlog
 mv dynmotd.sh /usr/local/bin/dynmotd
 </pre></code>
 
-<code>
+<code><pre>
 chmod 700 /usr/local/bin/addlog
 chmod 700 /usr/local/bin/rmlog
 chmod 700 /usr/local/bin/listlog
 chmod 777 /usr/local/bin/dynmotd
-</code>
+</pre></code>
 
 # enabled dynmotd to display all informations after user login (only root)
 <code>
