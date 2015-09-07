@@ -2,7 +2,7 @@
 Dynamic Motd (Message of the Day) a Script to print out all system specific informations
 
 ## installation
-<code><pre>
+.. code:: bash
 git clone https://github.com/rtulke/dynmotd.git
 cd dynmotd
 mv addlog.sh /usr/local/bin/addlog
@@ -13,12 +13,10 @@ chmod 700 /usr/local/bin/addlog
 chmod 700 /usr/local/bin/rmlog
 chmod 700 /usr/local/bin/listlog
 chmod 777 /usr/local/bin/dynmotd
-</pre></code>
 
 ## enabled dynmotd to display all informations after user login (only root)
-<code>
+.. code:: bash
 echo "/usr/local/bin/dynmotd" > /etc/profile.d/motd.sh
-</code>
 
 ## Commands 
 * addlog, add a new log entry into the .maintenance file
