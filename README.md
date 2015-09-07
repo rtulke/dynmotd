@@ -4,14 +4,14 @@ Dynamic Motd (Message of the Day) a Script to print out all system specific info
 
 
 # installation
-<code>
+<code><pre>
 git clone https://github.com/rtulke/dynmotd.git
 cd dynmotd
 mv addlog.sh /usr/local/bin/addlog
 mv rmlog.sh /usr/local/bin/rmlog
 mv listlog.sh /usr/local/bin/listlog
 mv dynmotd.sh /usr/local/bin/dynmotd
-</code>
+</pre></code>
 
 <code>
 chmod 700 /usr/local/bin/addlog
