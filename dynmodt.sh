@@ -3,7 +3,7 @@
 # Dynamic Motd
 # Robert Tulke, rt@debian.sh
 
-## don't start as root
+## only root can start
 if [ $(whoami) != root ]; then
     cat /etc/motd
     exit 0
