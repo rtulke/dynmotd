@@ -177,7 +177,7 @@ done < /root/.maintenance
 }
 MAINTENANCE=$(getmaintenance)
 
-## get current storage information, how many space a left :)
+## get current storage information, how many space are left :)
 STORAGE=$(df -h |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' | sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' )
 
 ## Main Menu
