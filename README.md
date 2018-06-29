@@ -1,13 +1,14 @@
 # dynmotd
 Dynamic Motd (Message of the Day) a Script to print out all system specific informations
 
+
 ![Example](/data/dynmotd.png)
 
 
 Requirements
 ------------
 
-* awk, egrep, sed, whoami, hostname, touch, source, rm, who, sort, uniq, tty, ps, ulimit, groups, cat, cut, wc, uptime, bc, uname, host, id, bash, df, 
+awk, egrep, sed, whoami, hostname, touch, source, rm, who, sort, uniq, tty, ps, ulimit, groups, cat, cut, wc, uptime, bc, uname, host, id, bash, df, 
 
 Installation
 ------------
