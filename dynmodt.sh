@@ -5,7 +5,7 @@
 
 ## only root can start
 if [ $(whoami) != root ]; then
-    cat /etc/motd
+    #cat /etc/motd
     exit 0
 fi
 
@@ -82,7 +82,7 @@ MYTTY=$(tty |sed 's/\/dev\///')
 MYHOST=$(who |egrep $MYTTY |awk -F '[()]' {'print $2'})
 
 ## extract my apn from fqdn
-APN=$(echo $MYHOST |awk -F '.' '{print $1}')
+APN=$(echo $MYHOST |awk -F '()' '{print $1}')
 
 ## get current procs
 PROCCOUNT=$(ps -Afl |egrep -v 'ps|wc' |wc -l)
@@ -97,7 +97,8 @@ GROUPZ=$(groups)
 SUPERUSERCOUNT=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |wc -l)
 
 ## who is super user (ignore root@)
-SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |egrep -v 'root\@|^$|^.$' |awk '{if ($0) print}' |awk {'print $3" "$4'} |sed 's/@.*$//g'| awk -F [.] {'print $1" "$2'} |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/\b\(.\)/\u\1/g')
+SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |egrep -v 'root\@|^$|^.$' |awk '{if ($0) print}' |awk {'print $3" "$4'} |sed 's/@.*$//g'| awk -F [.] {'print $1'} |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+#awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/\b\(.\)/\u\1/g')
 
 ## how many system users are there, only check uid <1000 and has a login shell
 SYSTEMUSERCOUNT=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |grep '\:\/bin\/bash' |wc -l)
@@ -106,7 +107,7 @@ SYSTEMUSERCOUNT=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |grep '\:\/bin\/bas
 SYSTEMUSER=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |egrep '\:\/bin\/bash|\:\/bin/sh' |awk '{if ($0) print}' |awk -F ':' {'print $1'} |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
 ## print any authorized ssh-key-user of a existing system user
-KEYUSER=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |sed 's/@.*$//g'| awk -F [.] {'print $1" "$2'} |sed 's/\b\(.\)/\u\1/g' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ , /, /g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g'  )
+KEYUSER=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |sed 's/@.*$//g'| awk -F [.] {'print $1 $2'} |sed 's/\b\(.\)/\u\1/g' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ , /, /g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t           /g'  )
 
 ## not working
 KEYUSERCOUNT=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |wc -l)
@@ -178,7 +179,7 @@ done < /root/.maintenance
 MAINTENANCE=$(getmaintenance)
 
 ## get current storage information, how many space are left :)
-STORAGE=$(df -h |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' | sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' )
+STORAGE=$(df -h |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' | sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' |egrep -v docker )
 
 ## Main Menu
 echo -e "
