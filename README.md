@@ -36,8 +36,7 @@ chmod 700 /usr/local/bin/addlog
 chmod 700 /usr/local/bin/rmlog
 chmod 700 /usr/local/bin/listlog
 chmod 777 /usr/local/bin/dynmotd
-~~~
-
+~~~~
 
 **enabled dynmotd to display all informations after user login (only root)**
 
@@ -54,3 +53,4 @@ Commands
 * addlog, add a new log entry into the .maintenance file
 * rmlog, delete a specific line in .maintenance 
 * listlog, list all .maintenance log entries
+* dynmotd, shows system informations
