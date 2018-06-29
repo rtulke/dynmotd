@@ -44,10 +44,6 @@ chmod 777 /usr/local/bin/dynmotd
 echo "/usr/local/bin/dynmotd" > /etc/profile.d/motd.sh
 ~~~
 
-
-Usage
------
-
 Commands 
 --------
 * addlog, add a new log entry into the .maintenance file
