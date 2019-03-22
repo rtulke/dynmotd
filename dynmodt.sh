@@ -42,19 +42,19 @@ function createenv {
 
     if [ ! -f /root/.environment ]; then
         echo "First login... We want to assign a function name for $fqdn,"
-      echo "like: Backup Server|File Server|Gateway|Proxy|..."
+        echo "like: Backup Server|File Server|Gateway|Proxy|..."
         echo
         echo -n "System Function: "
         read SYSFUNCTION
         echo -n "System Environment, like PRD|TST|ITG: "
         read SYSENV
-      echo -n "Service Level Agreement, like SLA1|SLA2|SLA3: "
-      read SYSSLA
+        echo -n "Service Level Agreement, like SLA1|SLA2|SLA3: "
+        read SYSSLA
 
-      touch /root/.environment
+        touch /root/.environment
         echo "SYSENV=\"$SYSENV\"" >> /root/.environment
         echo "SYSFUNCTION=\"$SYSFUNCTION\"" >> /root/.environment
-      echo "SYSSLA=\"$SYSSLA\"" >> /root/.environment
+        echo "SYSSLA=\"$SYSSLA\"" >> /root/.environment
     fi
 }
 
@@ -115,13 +115,13 @@ KEYUSERCOUNT=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':'
 ## get system uptime
 UPTIME=$(uptime |cut -c2- |cut -d, -f1)
 
-## get maxium usable memory
+## get maximum usable memory
 MEMMAX=$(echo $(cat /proc/meminfo |egrep MemTotal |awk {'print $2'})/1024 |bc)
 
 ## get current free memory
 MEMFREE=$(echo $(cat /proc/meminfo |egrep MemFree |awk {'print $2'})/1024 |bc)
 
-## get maxium usable swap space
+## get maximum usable swap space
 SWAPMAX=$(echo $(cat /proc/meminfo |egrep SwapTotal |awk {'print $2'})/1024 |bc)
 
 ## get current free swap space
