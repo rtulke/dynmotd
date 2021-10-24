@@ -13,28 +13,12 @@ awk, egrep, sed, whoami, hostname, touch, source, rm, who, sort, uniq, tty, ps, 
 Installation
 ------------
 
-download
 
 ~~~
 git clone https://github.com/rtulke/dynmotd.git
 cd dynmotd
-~~~
-
-rename files
-
-~~~~
-mv addlog.sh /usr/local/bin/addlog
-mv rmlog.sh /usr/local/bin/rmlog
-mv listlog.sh /usr/local/bin/listlog
-mv dynmotd.sh /usr/local/bin/dynmotd
-~~~~
-
-change permissions
-
-~~~~
-chmod 700 /usr/local/bin/addlog
-chmod 700 /usr/local/bin/rmlog
-chmod 700 /usr/local/bin/listlog
+chmod 700 *.sh
+mv *.sh /usr/local/bin/
 chmod 777 /usr/local/bin/dynmotd
 ~~~~
 
