@@ -1,19 +1,19 @@
 #!/bin/bash
 
 # Dynamic Motd
-# Robert Tulke, rt@debian.sh
+# BER, Robert Tulke, robert.tulke@berlin-airport.de
 
-## only root can start
+## don't start as root
 if [ $(whoami) != root ]; then
-    #cat /etc/motd
+    cat /etc/motd
     exit 0
 fi
 
 ## version
-version="dynmotd v0.8"
+version="dynmotd v1.1"
 fqdn=$(hostname --fqdn)
 
-## some colors for a scheme
+##some colors
 C_RED="\033[0;31m"
 C_BLUE="\033[0;34m"
 C_BLACK="\033[0;30m"
@@ -37,30 +37,31 @@ if [ ! -f /root/.maintenance ]; then
 fi
 
 ## investigate linux distribution
+
 ## create .environment file if not exist
 function createenv {
 
     if [ ! -f /root/.environment ]; then
-        echo "First login... We want to assign a function name for $fqdn,"
+    	echo "First login... We want to assign a function name for $fqdn,"
         echo "like: Backup Server|File Server|Gateway|Proxy|..."
-        echo
-        echo -n "System Function: "
-        read SYSFUNCTION
-        echo -n "System Environment, like PRD|TST|ITG: "
-        read SYSENV
-        echo -n "Service Level Agreement, like SLA1|SLA2|SLA3: "
-        read SYSSLA
+    	echo
+     	echo -n "System Function: "
+    	read SYSFUNCTION
+    	echo -n "System Environment, like PRD|TST|ITG: "
+    	read SYSENV
+      echo -n "Service Level Agreement, like SLA1|SLA2|SLA3: "
+      read SYSSLA
 
-        touch /root/.environment
-        echo "SYSENV=\"$SYSENV\"" >> /root/.environment
-        echo "SYSFUNCTION=\"$SYSFUNCTION\"" >> /root/.environment
-        echo "SYSSLA=\"$SYSSLA\"" >> /root/.environment
+      touch /root/.environment
+    	echo "SYSENV=\"$SYSENV\"" >> /root/.environment
+    	echo "SYSFUNCTION=\"$SYSFUNCTION\"" >> /root/.environment
+      echo "SYSSLA=\"$SYSSLA\"" >> /root/.environment
     fi
 }
 
 ## environment check
 if [ ! -f /root/.environment ]; then
-    createenv ; # if not exist then create
+    createenv ;	# if not exist then create
 fi
 
 ## include sys environment variables
@@ -69,11 +70,13 @@ source /root/.environment
 ## test sys .environment variables, if any of them are empty or currupt
 if [ -z "${SYSFUNCTION}" ] || [ -z "${SYSENV}" ] || [ -z "${SYSSLA}" ]; then
     rm /root/.environment
-    createenv ; # variables are exist but empty, create new
+    createenv ;	# variables are exist but empty, create new
 fi
 
 ## get a list of all logged in users
+#LOGGEDIN=$( echo $( for i in $( who |awk -F '[()]' '{ print $2 '} |sort -n ) ; do echo $i; done |uniq -c |awk {'print "(" $1 ") "$2","'} ) |sed 's/,$//' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
 LOGGEDIN=$(echo $(who |awk {'print $1" " $5'} |awk -F '[()]' '{ print $1 $2 '}  |uniq -c |awk {'print "(" $1 ") "$2" " $3","'} ) |sed 's/,$//' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+
 
 ## get my terminal
 MYTTY=$(tty |sed 's/\/dev\///')
@@ -82,7 +85,7 @@ MYTTY=$(tty |sed 's/\/dev\///')
 MYHOST=$(who |egrep $MYTTY |awk -F '[()]' {'print $2'})
 
 ## extract my apn from fqdn
-APN=$(echo $MYHOST |awk -F '()' '{print $1}')
+APN=$(echo $MYHOST |awk -F '.' '{print $1}')
 
 ## get current procs
 PROCCOUNT=$(ps -Afl |egrep -v 'ps|wc' |wc -l)
@@ -96,10 +99,6 @@ GROUPZ=$(groups)
 ## how many ssh super user (root) are there
 SUPERUSERCOUNT=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |wc -l)
 
-## who is super user (ignore root@)
-SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |egrep -v 'root\@|^$|^.$' |awk '{if ($0) print}' |awk {'print $3" "$4'} |sed 's/@.*$//g'| awk -F [.] {'print $1'} |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
-#awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/\b\(.\)/\u\1/g')
-
 ## how many system users are there, only check uid <1000 and has a login shell
 SYSTEMUSERCOUNT=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |grep '\:\/bin\/bash' |wc -l)
 
@@ -107,21 +106,25 @@ SYSTEMUSERCOUNT=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |grep '\:\/bin\/bas
 SYSTEMUSER=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |egrep '\:\/bin\/bash|\:\/bin/sh' |awk '{if ($0) print}' |awk -F ':' {'print $1'} |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
 ## print any authorized ssh-key-user of a existing system user
-KEYUSER=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |sed 's/@.*$//g'| awk -F [.] {'print $1 $2'} |sed 's/\b\(.\)/\u\1/g' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ , /, /g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t           /g'  )
+KEYUSER=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |awk -vq=" " 'BEGIN {printf ""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ , /, /g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g'  )
 
-## not working
+## who is super user (ignore root@)
+#SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/\b\(.\)/\u\1/g')
+SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/\b\(.\)/\u\1/g')
+
+## count sshkeys
 KEYUSERCOUNT=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |wc -l)
 
 ## get system uptime
 UPTIME=$(uptime |cut -c2- |cut -d, -f1)
 
-## get maximum usable memory
+## get maxium usable memory
 MEMMAX=$(echo $(cat /proc/meminfo |egrep MemTotal |awk {'print $2'})/1024 |bc)
 
 ## get current free memory
 MEMFREE=$(echo $(cat /proc/meminfo |egrep MemFree |awk {'print $2'})/1024 |bc)
 
-## get maximum usable swap space
+## get maxium usable swap space
 SWAPMAX=$(echo $(cat /proc/meminfo |egrep SwapTotal |awk {'print $2'})/1024 |bc)
 
 ## get current free swap space
@@ -153,16 +156,16 @@ ID=$(id)
 
 ## get runnig distribution name
 if [ -f /etc/SuSE-release ]; then
-        VERSION=$(cat /etc/SuSE-release |egrep SUSE -m 1)
-        ## get the curernt installed patch level
-        PATCHLEVEL=$(cat /etc/SuSE-release |egrep PATCHLEVEL |awk -F '= ' {'print $2'})
-        DISTRIBUTION="$VERSION SP$PATCHLEVEL"
+	VERSION=$(cat /etc/SuSE-release |egrep SUSE -m 1)
+	## get the curernt installed patch level
+	PATCHLEVEL=$(cat /etc/SuSE-release |egrep PATCHLEVEL |awk -F '= ' {'print $2'})
+	DISTRIBUTION="$VERSION SP$PATCHLEVEL"
 fi
 
 ## get runnig distribution name
 if [ -f /etc/debian_version ]; then
-        PATCHLEVEL=$(cat /etc/debian_version)
-        DISTRIBUTION="Debian GNU/Linux $PATCHLEVEL"
+	PATCHLEVEL=$(cat /etc/debian_version)
+	DISTRIBUTION="Debian GNU/Linux $PATCHLEVEL"
 fi
 
 
@@ -178,12 +181,13 @@ done < /root/.maintenance
 }
 MAINTENANCE=$(getmaintenance)
 
-## get current storage information, how many space are left :)
+## get current storage information, how many space a left :)
 STORAGE=$(df -h |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' | sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' |egrep -v docker )
 
 ## Main Menu
 echo -e "
 ${F2}============[ ${F1}System Data${F2} ]====================================================
+${F1}     Function ${F2}= ${F3}$SYSFUNCTION
 ${F1}     Hostname ${F2}= ${F3}$HOSTNAME
 ${F1}      Address ${F2}= ${F3}$IP
 ${F1}       Kernel ${F2}= ${F3}$UNAME
