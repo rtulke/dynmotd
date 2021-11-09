@@ -182,7 +182,7 @@ done < /root/.maintenance
 MAINTENANCE=$(getmaintenance)
 
 ## get current storage information, how many space a left :)
-STORAGE=$(df -h |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' | sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' |egrep -v docker )
+STORAGE=$(df -hT |sort -r -k 6 -i |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' |sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' |egrep -v docker )
 
 ## Main Menu
 echo -e "
