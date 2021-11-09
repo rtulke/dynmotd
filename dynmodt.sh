@@ -110,7 +110,8 @@ KEYUSER=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'pr
 
 ## who is super user (ignore root@)
 #SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/\b\(.\)/\u\1/g')
-SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/\b\(.\)/\u\1/g')
+#SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/\b\(.\)/\u\1/g')
+SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
 
 ## count sshkeys
 KEYUSERCOUNT=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |wc -l)
