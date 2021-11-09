@@ -73,7 +73,7 @@ if [ -z "${SYSFUNCTION}" ] || [ -z "${SYSENV}" ] || [ -z "${SYSSLA}" ]; then
 fi
 
 ## get a list of all logged in users
-LOGGEDIN=$( echo $( for i in $( who |awk -F '[()]' '{ print $2 '} |sort -n ) ; do echo $i; done |uniq -c |awk {'print "(" $1 ") "$2","'} ) |sed 's/,$//' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
+LOGGEDIN=$(echo $(who |awk {'print $1" " $5'} |awk -F '[()]' '{ print $1 $2 '}  |uniq -c |awk {'print "(" $1 ") "$2" " $3","'} ) |sed 's/,$//' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
 ## get my terminal
 MYTTY=$(tty |sed 's/\/dev\///')
