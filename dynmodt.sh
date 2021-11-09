@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Dynamic Motd
-# BER, Robert Tulke, robert.tulke@berlin-airport.de
+# Robert Tulke, rt@debian.sh
 
 ## don't start as root
 if [ $(whoami) != root ]; then
