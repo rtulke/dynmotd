@@ -3,6 +3,8 @@
 # Dynamic Motd
 # Robert Tulke, rt@debian.sh
 
+MAINLOG="/root/.maintenance"
+
 ## don't start as root
 if [ $(whoami) != root ]; then
     cat /etc/motd
@@ -11,7 +13,7 @@ fi
 
 ## version
 version="dynmotd v1.1"
-fqdn=$(hostname --fqdn)
+fqdn=$(hostname --fqdn) 
 
 ##some colors
 C_RED="\033[0;31m"
@@ -31,12 +33,14 @@ F3=${C_LGREEN}
 F4=${C_RED}
 
 
+
+
+#### Configuration Part
+
 ## create .maintenance file if not exist
 if [ ! -f /root/.maintenance ]; then
     touch /root/.maintenance
 fi
-
-## investigate linux distribution
 
 ## create .environment file if not exist
 function createenv {
@@ -72,6 +76,39 @@ if [ -z "${SYSFUNCTION}" ] || [ -z "${SYSENV}" ] || [ -z "${SYSSLA}" ]; then
     rm /root/.environment
     createenv ;	# variables are exist but empty, create new
 fi
+
+
+#### addlog
+
+function addlog () {  
+  
+if [ ! -f "$MAINLOG" ]; then
+    echo "Maintenance Logfile not found: $MAINLOG"
+    exit 0
+fi
+
+E_NOARGS=65
+if [ -z "$2" ]; then
+  echo "Usage:"
+  echo
+  echo "  ./$(basename $0) addlog \"new guest account added\" "
+  echo
+  exit $E_NOARGS
+fi
+mydate=$(date +"%b %d %H:%M:%S")
+echo $mydate $1 >> $MAINLOG
+
+}
+
+
+
+
+
+
+
+
+
+#### Main Part
 
 ## get a list of all logged in users
 #LOGGEDIN=$( echo $( for i in $( who |awk -F '[()]' '{ print $2 '} |sort -n ) ; do echo $i; done |uniq -c |awk {'print "(" $1 ") "$2","'} ) |sed 's/,$//' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
@@ -138,7 +175,7 @@ UNAME=$(uname -r)
 HOSTNAME=$fqdn
 
 ## get my main ip
-IP=$(host $HOSTNAME |awk {'print $4'})
+IP=$(host $HOSTNAME |grep "has address" |head -n1 |awk {'print $4'})
 
 ## get system cpu model
 CPUMODEL=$(cat /proc/cpuinfo |egrep 'model name' |uniq |awk -F ': ' {'print $2'})
@@ -188,29 +225,28 @@ STORAGE=$(df -hT |sort -r -k 6 -i |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' |s
 ## Main Menu
 echo -e "
 ${F2}============[ ${F1}System Data${F2} ]====================================================
-${F1}     Function ${F2}= ${F3}$SYSFUNCTION
-${F1}     Hostname ${F2}= ${F3}$HOSTNAME
-${F1}      Address ${F2}= ${F3}$IP
-${F1}       Kernel ${F2}= ${F3}$UNAME
-${F1} Distribution ${F2}= ${F3}$DISTRIBUTION
-${F1}       Uptime ${F2}= ${F3}$UPTIME
-${F1}          CPU ${F2}= ${F3}$CPUS x $CPUMODEL
-${F1}       Memory ${F2}= ${F3}$MEMFREE MB Free of $MEMMAX MB Total
-${F1}  Swap Memory ${F2}= ${F3}$SWAPFREE MB Free of $SWAPMAX MB Total
-${F1}    Processes ${F2}= ${F3}$PROCCOUNT of $PROCMAX MAX
+${F1}        Hostname ${F2}= ${F3}$HOSTNAME
+${F1}         Address ${F2}= ${F3}$IP
+${F1}          Kernel ${F2}= ${F3}$UNAME
+${F1}    Distribution ${F2}= ${F3}$DISTRIBUTION
+${F1}          Uptime ${F2}= ${F3}$UPTIME
+${F1}             CPU ${F2}= ${F3}$CPUS x $CPUMODEL
+${F1}          Memory ${F2}= ${F3}$MEMFREE MB Free of $MEMMAX MB Total
+${F1}     Swap Memory ${F2}= ${F3}$SWAPFREE MB Free of $SWAPMAX MB Total
+${F1}       Processes ${F2}= ${F3}$PROCCOUNT of $PROCMAX MAX
 ${F2}============[ ${F1}Storage Data${F2} ]===================================================
 ${F3}${STORAGE}
 ${F2}============[ ${F1}User Data${F2} ]======================================================
-${F1}     Username ${F2}= ${F3}$WHOIAM, ($APN)
-${F1}   Privileges ${F2}= ${F3}$ID
-${F1}     Sessions ${F2}= ${F3}[$SESSIONS] $LOGGEDIN
-${F1}  SystemUsers ${F2}= ${F3}[$SYSTEMUSERCOUNT] $SYSTEMUSER
-${F1}   SuperUsers ${F2}= ${F3}[$SUPERUSERCOUNT] $SUPERUSER
-${F1}  SshKeyUsers ${F2}= ${F3}[$KEYUSERCOUNT] $KEYUSER
+${F1}    Your Username ${F2}= ${F3}$WHOIAM, ($APN)
+${F1}  Your Privileges ${F2}= ${F3}$ID
+${F1} Current Sessions ${F2}= ${F3}[$SESSIONS] $LOGGEDIN
+${F1}      SystemUsers ${F2}= ${F3}[$SYSTEMUSERCOUNT] $SYSTEMUSER
+${F1}  SshKeyRootUsers ${F2}= ${F3}[$SUPERUSERCOUNT] $SUPERUSER
+${F1}      SshKeyUsers ${F2}= ${F3}[$KEYUSERCOUNT] $KEYUSER
 ${F2}============[ ${F1}Environment Data${F2} ]===============================================
-${F1}     Function ${F2}= ${F3}$SYSFUNCTION
-${F1}  Environment ${F2}= ${F3}$SYSENV
-${F1}Service Level ${F2}= ${F3}$SYSSLA
+${F1}         Function ${F2}= ${F3}$SYSFUNCTION
+${F1}      Environment ${F2}= ${F3}$SYSENV
+${F1}    Service Level ${F2}= ${F3}$SYSSLA
 ${F2}============[ ${F1}Maintenance Information${F2} ]========================================
 ${F4}$(getmaintenance)
 ${F2}=============================================================[ ${F1}$version${F2} ]==

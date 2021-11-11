@@ -17,7 +17,7 @@ Installation
 ~~~
 git clone https://github.com/rtulke/dynmotd.git
 cd dynmotd
-chmod 700 *.sh
+chmod 700 dynmotd addlog rmlog listlog
 mv *.sh /usr/local/bin/
 chmod 777 /usr/local/bin/dynmotd
 echo "/usr/local/bin/dynmotd" > /etc/profile.d/motd.sh

@@ -16,7 +16,7 @@ E_NOARGS=65
 if [ -z "$1" ]
 then
   echo "Usage: "
-  echo "  ./$(basename $0) \"added new guest account\" "
+  echo "  ./$(basename $0) \"new guest account added\" "
   echo
   exit $E_NOARGS
 fi
