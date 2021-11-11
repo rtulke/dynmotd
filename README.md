@@ -20,11 +20,6 @@ cd dynmotd
 chmod 700 *.sh
 mv *.sh /usr/local/bin/
 chmod 777 /usr/local/bin/dynmotd
-~~~~
-
-**enabled dynmotd to display all informations after user login (only root)**
-
-~~~
 echo "/usr/local/bin/dynmotd" > /etc/profile.d/motd.sh
 ~~~
 
