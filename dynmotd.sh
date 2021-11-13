@@ -1,21 +1,27 @@
 #!/bin/bash
 
-# Dynamic Motd
+# dynamic message of the day
 # Robert Tulke, rt@debian.sh
 
-MAINLOG="/root/.maintenance"
-
-## don't start as root
-if [ $(whoami) != root ]; then
-    cat /etc/motd
-    exit 0
-fi
-
 ## version
-version="dynmotd v1.1"
-fqdn=$(hostname --fqdn) 
+VERSION="dynmotd v1.6"
 
-##some colors
+## configuration and logfile
+MAINLOG="/root/.dynmotd/maintenance.log"
+ENVFILE="/root/.dynmotd/environment.cfg"
+
+## enable system related information about your system
+SYSTEM_INFO="1"             # show system information
+STORAGE_INFO="1"            # show storage information
+USER_INFO="1"               # show some user infomration
+ENVIRONMENT_INFO="1"        # show environement information
+MAINTENANCE_INFO="0"        # show maintenance infomration
+VERSION_INFO="1"            # show the version banner
+
+LIST_LOG_ENTRY="2"          # how many log line will be display in MAINTENANCE_INFO
+
+
+## some colors
 C_RED="\033[0;31m"
 C_BLUE="\033[0;34m"
 C_BLACK="\033[0;30m"
@@ -33,196 +39,179 @@ F3=${C_LGREEN}
 F4=${C_RED}
 
 
+## don't start as root
+if [ $(whoami) != root ]; then
+    cat /etc/motd
+    exit 0
+fi
 
 
 #### Configuration Part
 
 ## create .maintenance file if not exist
-if [ ! -f /root/.maintenance ]; then
-    touch /root/.maintenance
-fi
+function createmaintenance {
+
+    if [ ! -f $MAINLOG ]; then
+        DYNMOTDDIR=$(dirname $MAINLOG)
+        mkdir -p $DYNMOTDDIR
+        touch $MAINLOG
+        chmod 600 $MAINLOG
+        echo "new log file created $MAINLOG"
+        echo
+    fi
+}
+
 
 ## create .environment file if not exist
 function createenv {
 
-    if [ ! -f /root/.environment ]; then
-    	echo "First login... We want to assign a function name for $fqdn,"
-        echo "like: Backup Server|File Server|Gateway|Proxy|..."
-    	echo
-     	echo -n "System Function: "
-    	read SYSFUNCTION
-    	echo -n "System Environment, like PRD|TST|ITG: "
+
+        echo "We want to assign a function name for $(hostname --fqdn)"
+        echo
+        echo -n "System Function, like Webserver, Mailserver [${1}]: "
+        read SYSFUNCTION
+    	echo -n "System Environment, like PRD|TST|ITG [${2}]: "
     	read SYSENV
-      echo -n "Service Level Agreement, like SLA1|SLA2|SLA3: "
-      read SYSSLA
+        echo -n "Service Level Agreement, like SLA1|SLA2|SLA3: [${3}] "
+        read SYSSLA
+        rm -rf $ENVFILE
+        mkdir -p $(dirname $ENVFILE)
+        touch $ENVFILE
+        chmod 600 $ENVFILE
+       	echo "SYSENV=\"$SYSENV\"" >> $ENVFILE
+       	echo "SYSFUNCTION=\"$SYSFUNCTION\"" >> $ENVFILE
+        echo "SYSSLA=\"$SYSSLA\"" >> $ENVFILE
+}
 
-      touch /root/.environment
-    	echo "SYSENV=\"$SYSENV\"" >> /root/.environment
-    	echo "SYSFUNCTION=\"$SYSFUNCTION\"" >> /root/.environment
-      echo "SYSSLA=\"$SYSSLA\"" >> /root/.environment
+
+#### Parameter Part
+
+## addlog
+function addlog () {
+
+    if [ ! -f "$MAINLOG" ]; then
+        echo "maintenance logfile not found: $MAINLOG try to create a new one..."
+        createmaintenance
     fi
-}
 
-## environment check
-if [ ! -f /root/.environment ]; then
-    createenv ;	# if not exist then create
-fi
+    if [ -z "$1" ]; then
+        echo "Usage:"
+        echo
+        echo "  ./$(basename $0) -a \"new guest account added\" "
+        echo
+        exit 1
+    fi
 
-## include sys environment variables
-source /root/.environment
-
-## test sys .environment variables, if any of them are empty or currupt
-if [ -z "${SYSFUNCTION}" ] || [ -z "${SYSENV}" ] || [ -z "${SYSSLA}" ]; then
-    rm /root/.environment
-    createenv ;	# variables are exist but empty, create new
-fi
-
-
-#### addlog
-
-function addlog () {  
-  
-if [ ! -f "$MAINLOG" ]; then
-    echo "Maintenance Logfile not found: $MAINLOG"
-    exit 0
-fi
-
-E_NOARGS=65
-if [ -z "$2" ]; then
-  echo "Usage:"
-  echo
-  echo "  ./$(basename $0) addlog \"new guest account added\" "
-  echo
-  exit $E_NOARGS
-fi
-mydate=$(date +"%b %d %H:%M:%S")
-echo $mydate $1 >> $MAINLOG
-
+    mydate=$(date +"%b %d %H:%M:%S")
+    echo $mydate $1 >> $MAINLOG
+    echo "log entry added..."
 }
 
 
+## rmlog
+function rmlog () {
 
+        if [ -z "$1" ]; then
+            echo "Usage: "
+            echo
+            echo "  ./$(basename $0) -r [line-number] "
+            echo
+            exit 1
+        fi
 
+        re='^[0-9]+$'
+        if ! [[ $1 =~ $re ]] ; then
+            echo "$1 : not a number"
+            exit 1
+        fi
 
+        ## remove specific line
+        sed -i "$1"'d' $MAINLOG
+        RC=$?
+        if [ $RC = "0" ]; then
+            echo "line $1 successfully deleted..."
+        else
+            echo "something went wrong"
+            exit 1
 
-
-
-
-#### Main Part
-
-## get a list of all logged in users
-#LOGGEDIN=$( echo $( for i in $( who |awk -F '[()]' '{ print $2 '} |sort -n ) ; do echo $i; done |uniq -c |awk {'print "(" $1 ") "$2","'} ) |sed 's/,$//' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
-LOGGEDIN=$(echo $(who |awk {'print $1" " $5'} |awk -F '[()]' '{ print $1 $2 '}  |uniq -c |awk {'print "(" $1 ") "$2" " $3","'} ) |sed 's/,$//' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
-
-
-## get my terminal
-MYTTY=$(tty |sed 's/\/dev\///')
-
-## get my hostname
-MYHOST=$(who |egrep $MYTTY |awk -F '[()]' {'print $2'})
-
-## extract my apn from fqdn
-APN=$(echo $MYHOST |awk -F '.' '{print $1}')
-
-## get current procs
-PROCCOUNT=$(ps -Afl |egrep -v 'ps|wc' |wc -l)
-
-## get maxium usable procs
-PROCMAX=$(ulimit -u)
-
-## get my own user groups
-GROUPZ=$(groups)
-
-## how many ssh super user (root) are there
-SUPERUSERCOUNT=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |wc -l)
-
-## how many system users are there, only check uid <1000 and has a login shell
-SYSTEMUSERCOUNT=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |grep '\:\/bin\/bash' |wc -l)
-
-## who is a system user, only check uid <1000 and has a login shell
-SYSTEMUSER=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |egrep '\:\/bin\/bash|\:\/bin/sh' |awk '{if ($0) print}' |awk -F ':' {'print $1'} |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
-
-## print any authorized ssh-key-user of a existing system user
-KEYUSER=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |awk -vq=" " 'BEGIN {printf ""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ , /, /g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g'  )
-
-## who is super user (ignore root@)
-#SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/\b\(.\)/\u\1/g')
-#SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/\b\(.\)/\u\1/g')
-SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
-
-## count sshkeys
-KEYUSERCOUNT=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |wc -l)
-
-## get system uptime
-UPTIME=$(uptime |cut -c2- |cut -d, -f1)
-
-## get maxium usable memory
-MEMMAX=$(echo $(cat /proc/meminfo |egrep MemTotal |awk {'print $2'})/1024 |bc)
-
-## get current free memory
-MEMFREE=$(echo $(cat /proc/meminfo |egrep MemFree |awk {'print $2'})/1024 |bc)
-
-## get maxium usable swap space
-SWAPMAX=$(echo $(cat /proc/meminfo |egrep SwapTotal |awk {'print $2'})/1024 |bc)
-
-## get current free swap space
-SWAPFREE=$(echo $(cat /proc/meminfo |egrep SwapFree |awk {'print $2'})/1024 |bc)
-
-## get current kernel version
-UNAME=$(uname -r)
-
-## get my fqdn hostname.domain.name.tld
-HOSTNAME=$fqdn
-
-## get my main ip
-IP=$(host $HOSTNAME |grep "has address" |head -n1 |awk {'print $4'})
-
-## get system cpu model
-CPUMODEL=$(cat /proc/cpuinfo |egrep 'model name' |uniq |awk -F ': ' {'print $2'})
-
-## how many cpu i have
-CPUS=$(cat /proc/cpuinfo|grep processor|wc -l)
-
-## how many user logged in at the moment
-SESSIONS=$(who |wc -l)
-
-## get my username
-WHOIAM=$(whoami)
-
-## get my user id
-ID=$(id)
-
-## get runnig distribution name
-if [ -f /etc/SuSE-release ]; then
-	VERSION=$(cat /etc/SuSE-release |egrep SUSE -m 1)
-	## get the curernt installed patch level
-	PATCHLEVEL=$(cat /etc/SuSE-release |egrep PATCHLEVEL |awk -F '= ' {'print $2'})
-	DISTRIBUTION="$VERSION SP$PATCHLEVEL"
-fi
-
-## get runnig distribution name
-if [ -f /etc/debian_version ]; then
-	PATCHLEVEL=$(cat /etc/debian_version)
-	DISTRIBUTION="Debian GNU/Linux $PATCHLEVEL"
-fi
-
-
-## get latest maintenance information
-#MAINTENANCE1=$(cat /root/.maintenance)
-function getmaintenance {
-COUNT=1
-while read line; do
-    NAME=$line;
-    echo "$COUNT $NAME"
-    COUNT=$((COUNT+1))
-done < /root/.maintenance
+        fi
 }
-MAINTENANCE=$(getmaintenance)
 
-## get current storage information, how many space a left :)
-STORAGE=$(df -hT |sort -r -k 6 -i |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' |sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' |egrep -v docker )
 
-## Main Menu
+## listlog
+function listlog () {
+
+    if [ ! -f "$MAINLOG" ]; then
+        echo "Maintenance Logfile not found: $MAINLOG"
+        createmaintenance
+    fi
+
+    COUNT=1
+    while read line; do
+        NAME=$line;
+        echo -e "${F2}$COUNT ${F1}$NAME${F2}"
+        COUNT=$((COUNT+1))
+    done < $MAINLOG
+}
+
+
+#### Output Part
+
+## System Info
+function show_system_info () {
+
+    if [ "$SYSTEM_INFO" = "1" ]; then
+
+        ## get my fqdn hostname.domain.name.tld
+        HOSTNAME=$(hostname --fqdn)
+
+        ## get my main ip
+        IP=$(host $HOSTNAME |grep "has address" |head -n1 |awk {'print $4'})
+
+        ## get current kernel version
+        UNAME=$(uname -r)
+
+        ## get runnig sles distribution name
+        if [ -f /etc/SuSE-release ]; then
+            VERSION=$(cat /etc/SuSE-release |egrep SUSE -m 1)
+            PATCHLEVEL=$(cat /etc/SuSE-release |egrep PATCHLEVEL |awk -F '= ' {'print $2'})
+	    DISTRIBUTION="$VERSION SP$PATCHLEVEL"
+        fi
+
+        ## get runnig distribution name
+        if [ -f /etc/debian_version ]; then
+            PATCHLEVEL=$(cat /etc/debian_version)
+            DISTRIBUTION="Debian GNU/Linux $PATCHLEVEL"
+        fi
+
+        ## get system uptime
+        UPTIME=$(uptime |cut -c2- |cut -d, -f1)
+
+        ## get amount of cpu processors
+        CPUS=$(cat /proc/cpuinfo|grep processor|wc -l)
+
+        ## get system cpu model
+        CPUMODEL=$(cat /proc/cpuinfo |egrep 'model name' |uniq |awk -F ': ' {'print $2'})
+
+        ## get current free memory
+        MEMFREE=$(echo $(cat /proc/meminfo |egrep MemFree |awk {'print $2'})/1024 |bc)
+
+        ## get maxium usable memory
+        MEMMAX=$(echo $(cat /proc/meminfo |egrep MemTotal |awk {'print $2'})/1024 |bc)
+
+        ## get current free swap space
+        SWAPFREE=$(echo $(cat /proc/meminfo |egrep SwapFree |awk {'print $2'})/1024 |bc)
+
+        ## get maxium usable swap space
+        SWAPMAX=$(echo $(cat /proc/meminfo |egrep SwapTotal |awk {'print $2'})/1024 |bc)
+
+        ## get current procs
+        PROCCOUNT=$(ps -Afl |egrep -v 'ps|wc' |wc -l)
+
+        ## get maxium usable procs
+        PROCMAX=$(ulimit -u)
+
+## display system information
 echo -e "
 ${F2}============[ ${F1}System Data${F2} ]====================================================
 ${F1}        Hostname ${F2}= ${F3}$HOSTNAME
@@ -233,22 +222,200 @@ ${F1}          Uptime ${F2}= ${F3}$UPTIME
 ${F1}             CPU ${F2}= ${F3}$CPUS x $CPUMODEL
 ${F1}          Memory ${F2}= ${F3}$MEMFREE MB Free of $MEMMAX MB Total
 ${F1}     Swap Memory ${F2}= ${F3}$SWAPFREE MB Free of $SWAPMAX MB Total
-${F1}       Processes ${F2}= ${F3}$PROCCOUNT of $PROCMAX MAX
+${F1}       Processes ${F2}= ${F3}$PROCCOUNT of $PROCMAX MAX${F1}"
+
+    fi
+}
+
+
+## Storage Informations
+function show_storage_info () {
+
+    if [ "$STORAGE_INFO" = "1" ]; then
+
+        ## get current storage information, how many space a left :)
+        STORAGE=$(df -hT |sort -r -k 6 -i |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' |sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' |egrep -v docker )
+
+## display storage information
+echo -e "
 ${F2}============[ ${F1}Storage Data${F2} ]===================================================
-${F3}${STORAGE}
+${F3}${STORAGE}${F1}"
+
+    fi
+}
+
+
+## User Informations
+function show_user_info () {
+
+    if [ "$USER_INFO" = "1" ]; then
+
+        ## get my username
+        WHOIAM=$(whoami)
+
+        ## get my own user groups
+        GROUPZ=$(groups)
+
+        ## get my user id
+        ID=$(id)
+
+        ## how many users are logged in
+        SESSIONS=$(who |wc -l)
+
+        ## get a list of all logged in users
+        LOGGEDIN=$(echo $(who |awk {'print $1" " $5'} |awk -F '[()]' '{ print $1 $2 '}  |uniq -c |awk {'print "(" $1 ") "$2" " $3","'} ) |sed 's/,$//' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+
+        ## how many system users are there, only check uid <1000 and has a login shell
+        SYSTEMUSERCOUNT=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |grep '\:\/bin\/bash' |wc -l)
+
+        ## who is a system user, only check uid <1000 and has a login shell
+        SYSTEMUSER=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |egrep '\:\/bin\/bash|\:\/bin/sh' |awk '{if ($0) print}' |awk -F ':' {'print $1'} |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+
+        ## how many ssh super user (root) are there
+        SUPERUSERCOUNT=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |wc -l)
+
+        ## who is super user (ignore root@)
+        SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
+
+        ## count sshkeys
+        KEYUSERCOUNT=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |wc -l)
+
+        ## print any authorized ssh-key-user of a existing system user
+        KEYUSER=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |awk -vq=" " 'BEGIN {printf ""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ , /, /g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g'  )
+
+
+## show user information
+echo -e "
 ${F2}============[ ${F1}User Data${F2} ]======================================================
-${F1}    Your Username ${F2}= ${F3}$WHOIAM, ($APN)
+${F1}    Your Username ${F2}= ${F3}$WHOIAM
 ${F1}  Your Privileges ${F2}= ${F3}$ID
 ${F1} Current Sessions ${F2}= ${F3}[$SESSIONS] $LOGGEDIN
 ${F1}      SystemUsers ${F2}= ${F3}[$SYSTEMUSERCOUNT] $SYSTEMUSER
 ${F1}  SshKeyRootUsers ${F2}= ${F3}[$SUPERUSERCOUNT] $SUPERUSER
-${F1}      SshKeyUsers ${F2}= ${F3}[$KEYUSERCOUNT] $KEYUSER
+${F1}      SshKeyUsers ${F2}= ${F3}[$KEYUSERCOUNT] $KEYUSER${F1}"
+
+    fi
+}
+
+
+## Environment Informations
+function show_environment_info () {
+
+    if [ "$ENVIRONMENT_INFO" = "1" ]; then
+
+        ## environment file check
+        if [ ! -f $ENVFILE ]; then
+            createenv ;
+        fi
+
+        ## include sys environment variables
+        source $ENVFILE
+
+        ## test environment.cfg variables, if any of them are empty or damaged
+        if [ -z "${SYSFUNCTION}" ] || [ -z "${SYSENV}" ] || [ -z "${SYSSLA}" ]; then
+            rm $ENVFILE
+            createenv ;	# variables are exist but empty, create new
+        fi
+
+
+## display environment information
+echo -e "
 ${F2}============[ ${F1}Environment Data${F2} ]===============================================
 ${F1}         Function ${F2}= ${F3}$SYSFUNCTION
 ${F1}      Environment ${F2}= ${F3}$SYSENV
-${F1}    Service Level ${F2}= ${F3}$SYSSLA
+${F1}    Service Level ${F2}= ${F3}$SYSSLA${F1}"
+
+    fi
+}
+
+
+## Maintenance Information
+function show_maintenance_info () {
+
+    if [ "$MAINTENANCE_INFO" = "1" ]; then
+
+        ## get latest maintenance information
+        MAINTENANCE=$(listlog |head -n${LIST_LOG_ENTRY})
+
+
+## display maintenance information
+echo -e "
 ${F2}============[ ${F1}Maintenance Information${F2} ]========================================
-${F4}$(getmaintenance)
-${F2}=============================================================[ ${F1}$version${F2} ]==
-${F1}
-"
+${F4}$MAINTENANCE${F1}"
+
+    fi
+}
+
+
+## Version Information
+function show_version_info () {
+
+    if [ "$VERSION_INFO" = "1" ]; then
+
+
+## display version information
+echo -e "
+${F2}=============================================================[ ${F1}$VERSION${F2} ]==
+${F1}"
+
+    fi
+}
+
+
+## Display Output
+function show_info () {
+
+    show_system_info
+    show_storage_info
+    show_user_info
+    show_environment_info
+    show_maintenance_info
+    show_version_info
+}
+
+
+#### Main Part
+
+## if no parameter is passed then start show_info
+if [ -z "$1" ]; then
+    show_info
+fi
+
+
+## paremeter
+param="$2 $3"
+
+case "$1" in
+
+    addlog|-a|--addlog)
+        addlog "$2"
+    ;;
+
+    rmlog|-d|--rmlog)
+        rmlog "$2"
+    ;;
+
+    log|--log|-l|--listlog|listlog)
+        listlog
+    ;;
+
+    config|-c|--config|setup|-s|--setup)
+        createenv
+    ;;
+
+    help|-h|--help|?)
+        echo
+        echo "Usage: $0 [-c|-a|-d|--help] <params>"
+        echo
+        echo "    e.g. $0 -a \"start web migration\"  "
+        echo
+        echo "    Parameter:"
+        echo
+        echo "      -a | addlog  | --addlog \"...\"           add new log entry"
+        echo "      -d | rmlog   | --rmlog [loglinenumber]    delete specific log entry"
+        echo "      -l | log     | --log                      list complete log"
+        echo "      -c | config  | --config                   configuration setup"
+        echo ""
+    ;;
+
+esac
