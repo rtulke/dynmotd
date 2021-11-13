@@ -41,7 +41,7 @@ Usage: ./dynmotd [-c|-a|-d|--help] <params>
 
     Parameter:
 
-      -a | addlog  | --addlog "..."           add new log entry
+      -a | addlog  | --addlog "..."             add new log entry
       -d | rmlog   | --rmlog [loglinenumber]    delete specific log entry
       -l | log     | --log                      list complete log
       -c | config  | --config                   configuration setup
