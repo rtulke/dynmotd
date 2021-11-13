@@ -13,19 +13,64 @@ awk, egrep, sed, whoami, hostname, touch, source, rm, who, sort, uniq, tty, ps, 
 Installation
 ------------
 
+Script runs only as root.
 
 ~~~
+sudo -i
 git clone https://github.com/rtulke/dynmotd.git
 cd dynmotd
-chmod 700 dynmotd addlog rmlog listlog
-mv *.sh /usr/local/bin/
+mv dynmotd.sh /usr/local/bin/dynmotd
 chmod 777 /usr/local/bin/dynmotd
 echo "/usr/local/bin/dynmotd" > /etc/profile.d/motd.sh
 ~~~
 
-Commands 
---------
-* addlog, add a new log entry into the .maintenance file
-* rmlog, delete a specific line in .maintenance 
-* listlog, list all .maintenance log entries
-* dynmotd, shows system informations
+Test dynmotd
+
+~~~
+exit
+sudo -i
+~~~
+
+Parameter 
+---------
+
+~~~
+Usage: ./dynmotd [-c|-a|-d|--help] <params>
+
+    e.g. ./dynmotd -a "start web migration"
+
+    Parameter:
+
+      -a | addlog  | --addlog "..."           add new log entry
+      -d | rmlog   | --rmlog [loglinenumber]    delete specific log entry
+      -l | log     | --log                      list complete log
+      -c | config  | --config                   configuration setup
+~~~
+
+Some dynmotd Options
+--------------------
+
+~~~
+vim /usr/local/bin/dynmotd
+~~~
+
+You can enable or disable information blocks 
+
+~~~
+## enable system related information about your system
+SYSTEM_INFO="1"
+STORAGE_INFO="1"
+USER_INFO="1"
+ENVIRONMENT_INFO="1"
+MAINTENANCE_INFO="0"
+VERSION_INFO="1"
+~~~
+
+ * 1 = enable
+ * 0 = disable
+
+You can also change the log message line lenght by modify "LIST_LOG_ENTRY"
+
+~~~
+LIST_LOG_ENTRY="5"
+~~~
