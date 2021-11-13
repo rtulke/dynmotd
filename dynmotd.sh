@@ -412,7 +412,7 @@ case "$1" in
         echo "    Parameter:"
         echo
         echo "      -a | addlog  | --addlog \"...\"           add new log entry"
-        echo "      -d | rmlog   | --rmlog [loglinenumber]    delete specific log entry"
+        echo "      -d | rmlog   | --rmlog [loglinenumber]    to delete a specific log entry use -l to identify"
         echo "      -l | log     | --log                      list complete log"
         echo "      -c | config  | --config                   configuration setup"
         echo ""
