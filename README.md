@@ -69,7 +69,7 @@ VERSION_INFO="1"
  * 1 = enable
  * 0 = disable
 
-You can also change the log message line lenght by modify "LIST_LOG_ENTRY"
+You can also change the number of log lines displayed by changing "LIST_LOG_ENTRY".
 
 ~~~
 LIST_LOG_ENTRY="5"
