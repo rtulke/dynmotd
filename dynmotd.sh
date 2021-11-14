@@ -22,16 +22,26 @@ LIST_LOG_ENTRY="2"          # how many log line will be display in MAINTENANCE_I
 
 
 ## some colors
-C_RED="\033[0;31m"
-C_BLUE="\033[0;34m"
-C_BLACK="\033[0;30m"
-C_CYAN="\033[0;36m"
-C_PINK="\033[0;35m"
-C_GREY="\033[0;37m"
-C_LGREEN="\033[1;32m"
+C_BLACK="\033[0;30m"        # Black
+C_DGRAY="\033[1;30m"        # Dark Grey
+C_GREY="\033[0;37m"         # Grey
+C_WHITE="\033[1;37m"        # White
+C_RED="\033[0;31m"          # Red
+C_LRED="\033[1;31m"         # Light Red
+C_BLUE="\033[0;34m"         # Blue
+C_LBLUE="\033[1;34m"        # Blue
+C_CYAN="\033[0;36m"         # Cyan
+C_LCYAN="\033[1;36m"        # Light Cyan
+C_PINK="\033[0;35m"         # Purple
+C_PINK="\033[1;35m"         # Light Purple
+C_GREEN="\033[0;32m"        # Green
+C_LGREEN="\033[1;32m"       # Light Green
+C_BROWN="\033[0;33m"        # Brown/Orangen
+C_YELLOW="\033[1;33m"       # Yellow
 
 
 ## color schemes
+
 # DOT, day of the tentacle scheme
 F1=${C_GREY}
 F2=${C_PINK}
@@ -44,6 +54,7 @@ if [ $(whoami) != root ]; then
     cat /etc/motd
     exit 0
 fi
+
 
 
 #### Configuration Part
@@ -411,10 +422,10 @@ case "$1" in
         echo
         echo "    Parameter:"
         echo
-        echo "      -a | addlog  | --addlog \"...\"           add new log entry"
-        echo "      -d | rmlog   | --rmlog [loglinenumber]    to delete a specific log entry use -l to identify"
-        echo "      -l | log     | --log                      list complete log"
-        echo "      -c | config  | --config                   configuration setup"
+        echo "      -a | addlog  | --addlog \"...\"             add new log entry"
+        echo "      -d | rmlog   | --rmlog [loglinenumber]      delete specific log entry"
+        echo "      -l | log     | --log                        list complete log"
+        echo "      -c | config  | --config                     configuration setup"
         echo ""
     ;;
 
