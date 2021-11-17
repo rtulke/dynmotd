@@ -25,7 +25,7 @@ Pre-Setup
 Install Debian default packages:
 
 ~~~
-apt install coreutils bc procps hostname sed mawk grep bind9-host
+apt install coreutils bc procps hostname sed mawk grep bind9-host git
 ~~~
 
 Installation
