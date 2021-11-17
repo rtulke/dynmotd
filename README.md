@@ -35,9 +35,9 @@ Parameter
 ---------
 
 ~~~
-Usage: ./dynmotd [-c|-a|-d|--help] <params>
+Usage: dynmotd [-c|-a|-d|--help] <params>
 
-    e.g. ./dynmotd -a "start web migration"
+    e.g. dynmotd -a "start web migration"
 
     Parameter:
 
