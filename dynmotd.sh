@@ -3,6 +3,8 @@
 # dynamic message of the day
 # Robert Tulke, rt@debian.sh
 
+
+
 ## version
 VERSION="dynmotd v1.6"
 
@@ -190,17 +192,7 @@ function show_system_info () {
         UNAME=$(uname -r)
 
         ## get runnig sles distribution name
-        if [ -f /etc/SuSE-release ]; then
-            VERSION=$(cat /etc/SuSE-release |egrep SUSE -m 1)
-            PATCHLEVEL=$(cat /etc/SuSE-release |egrep PATCHLEVEL |awk -F '= ' {'print $2'})
-	    DISTRIBUTION="$VERSION SP$PATCHLEVEL"
-        fi
-
-        ## get runnig distribution name
-        if [ -f /etc/debian_version ]; then
-            PATCHLEVEL=$(cat /etc/debian_version)
-            DISTRIBUTION="Debian GNU/Linux $PATCHLEVEL"
-        fi
+        DISTRIBUTION=$(lsb_release -s -d)
 
         ## get system uptime
         UPTIME=$(uptime |cut -c2- |cut -d, -f1)
