@@ -9,6 +9,7 @@ Requirements
 ------------
 
 |debian package name|tools|
+|-------------------|-----|
 |coreutils|mkdir, echo, chmod, rm, whoami, basename, dirname, touch, date, head, uname, cat, wc, cut, uniq, sort, groups, coreutils, who|
 |bc|bc|
 |procps|uptime, ps|
