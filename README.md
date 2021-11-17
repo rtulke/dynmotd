@@ -18,7 +18,7 @@ Requirements
 |mawk|awk|
 |grep|grep, egrep|
 |bind9-host|host|
-|lsb-release|lsb-release|
+|lsb-release|lsb_release|
 
 Pre-Setup
 ---------
