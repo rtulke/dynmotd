@@ -18,7 +18,9 @@ STORAGE_INFO="1"            # show storage information
 USER_INFO="1"               # show some user infomration
 ENVIRONMENT_INFO="1"        # show environement information
 MAINTENANCE_INFO="0"        # show maintenance infomration
+UPDATE_INFO="1"             # show update information
 VERSION_INFO="1"            # show the version banner
+
 
 LIST_LOG_ENTRY="2"          # how many log line will be display in MAINTENANCE_INFO
 
@@ -226,7 +228,7 @@ function show_system_info () {
 
 ## display system information
 echo -e "
-${F2}============[ ${F1}System Data${F2} ]====================================================
+${F2}============[ ${F1}System Info${F2} ]====================================================
 ${F1}        Hostname ${F2}= ${F3}$HOSTNAME
 ${F1}         Address ${F2}= ${F3}$IP
 ${F1}          Kernel ${F2}= ${F3}$UNAME
@@ -240,6 +242,24 @@ ${F1}       Processes ${F2}= ${F3}$PROCCOUNT of $PROCMAX MAX${F1}"
     fi
 }
 
+## Storage Information only for APT based distributionss
+function show_update_info () {
+
+    if [ ! -f /usr/bin/apt-get ]; then
+        exit 1
+    fi
+
+    if [ "$UPDATE_INFO" = "1" ]; then
+
+        ## get outdated updates
+        UPDATES=$(/usr/bin/apt-get -s dist-upgrade |egrep  "upgraded" |egrep "newly installed" |awk {'print $1'})
+
+## display storage information
+echo -e "
+${F2}============[ ${F1}Update Info${F2} ]====================================================
+${F1}Available Updates ${F2}= ${F3}${UPDATES}${F1}"
+    fi
+}
 
 ## Storage Informations
 function show_storage_info () {
@@ -251,7 +271,7 @@ function show_storage_info () {
 
 ## display storage information
 echo -e "
-${F2}============[ ${F1}Storage Data${F2} ]===================================================
+${F2}============[ ${F1}Storage Info${F2} ]===================================================
 ${F3}${STORAGE}${F1}"
 
     fi
@@ -381,6 +401,7 @@ function show_info () {
     show_system_info
     show_storage_info
     show_user_info
+    show_update_info
     show_environment_info
     show_maintenance_info
     show_version_info
