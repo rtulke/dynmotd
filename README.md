@@ -8,14 +8,14 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 Requirements
 ------------
 
-|debian package name  |tools                 |
+|debian package name  |used tools            |
 |---------------------|----------------------|
 |coreutils|mkdir, echo, chmod, rm, whoami, basename, dirname, touch, date, head, uname, cat, wc, cut, uniq, sort, groups, coreutils, who|
 |bc|bc|
 |procps|uptime, ps|
 |hostname|hostname|
 |sed|sed|
-|mawk|awk, mawk|
+|mawk|awk|
 |grep|grep, egrep|
 |bind9-host|host|
 
