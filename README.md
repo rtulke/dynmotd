@@ -19,8 +19,18 @@ Requirements
 |grep|grep, egrep|
 |bind9-host|host|
     
+    `
+Pre-Setup
+---------
 
-awk, egrep, sed, whoami, hostname, touch, source, rm, who, sort, uniq, tty, ps, ulimit, groups, cat, cut, wc, uptime, bc, uname, host, id, bash, df, 
+Install Debian default packages:
+
+~~~
+apt install coreutils bc procps hostname sed mawk grep bind9-host
+~~~
+
+
+
 
 Installation
 ------------
