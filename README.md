@@ -18,6 +18,7 @@ Requirements
 |mawk|awk|
 |grep|grep, egrep|
 |bind9-host|host|
+|lsb-release|lsb-release|
 
 Pre-Setup
 ---------
@@ -25,7 +26,7 @@ Pre-Setup
 Install Debian default packages:
 
 ~~~
-apt install coreutils bc procps hostname sed mawk grep bind9-host git
+apt install coreutils bc procps hostname sed mawk grep bind9-host lsb-release git
 ~~~
 
 Installation
