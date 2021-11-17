@@ -242,7 +242,7 @@ ${F1}       Processes ${F2}= ${F3}$PROCCOUNT of $PROCMAX MAX${F1}"
     fi
 }
 
-## Storage Information only for APT based distributionss
+## Update Information only for APT based distributions
 function show_update_info () {
 
     if [ ! -f /usr/bin/apt-get ]; then
@@ -254,7 +254,7 @@ function show_update_info () {
         ## get outdated updates
         UPDATES=$(/usr/bin/apt-get -s dist-upgrade |egrep  "upgraded" |egrep "newly installed" |awk {'print $1'})
 
-## display storage information
+## display update information
 echo -e "
 ${F2}============[ ${F1}Update Info${F2} ]====================================================
 ${F1}Available Updates ${F2}= ${F3}${UPDATES}${F1}"
