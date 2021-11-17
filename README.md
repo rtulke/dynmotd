@@ -4,22 +4,6 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 
 ![Example](/data/dynmotd.png)
 
-
-Requirements
-------------
-
-|debian package name  |used tools            |
-|---------------------|----------------------|
-|coreutils|mkdir, echo, chmod, rm, whoami, basename, dirname, touch, date, head, uname, cat, wc, cut, uniq, sort, groups, coreutils, who|
-|bc|bc|
-|procps|uptime, ps|
-|hostname|hostname|
-|sed|sed|
-|mawk|awk|
-|grep|grep, egrep|
-|bind9-host|host|
-|lsb-release|lsb_release|
-
 Pre-Setup
 ---------
 
@@ -32,7 +16,7 @@ apt install coreutils bc procps hostname sed mawk grep bind9-host lsb-release gi
 Install RedHat default packages:
 
 ~~~
-yum install redhat-lsb-core bc git
+yum install redhat-lsb-core bc git bind-utils
 ~~~
 
 Installation
