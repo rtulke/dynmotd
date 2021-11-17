@@ -4,7 +4,7 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 ![Example](/data/dynmotd.png)
 
 
-# Requirements
+# Tested Linux Distributions
 
 | Distribution 	| Status                |
 |--------------	|----------------------	|
@@ -16,19 +16,22 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 | Ubuntu 20     | Successfully tested  	|
 
 
-Pre-Setup
----------
+Pre-Setup Debian and Ubuntu
+---------------------------
 
-Install Debian default packages:
+Install default packages:
 
 ~~~
 apt install coreutils bc procps hostname sed mawk grep bind9-host lsb-release git
 ~~~
 
-Install RedHat default packages:
+Pre-Setup CentOS and RedHat
+---------------------------
+
+Install default packages:
 
 ~~~
-yum install redhat-lsb-core bc git bind-utils
+yum install bc bind-utils redhat-lsb-core git 
 ~~~
 
 Installation
