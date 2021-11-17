@@ -18,8 +18,7 @@ Requirements
 |mawk|awk, mawk|
 |grep|grep, egrep|
 |bind9-host|host|
-    
-    `
+
 Pre-Setup
 ---------
 
@@ -28,9 +27,6 @@ Install Debian default packages:
 ~~~
 apt install coreutils bc procps hostname sed mawk grep bind9-host
 ~~~
-
-
-
 
 Installation
 ------------
