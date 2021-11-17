@@ -14,6 +14,7 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 | Debian 10    	| Successfully tested  	|
 | Ubuntu 18     | Successfully tested  	|
 | Ubuntu 20     | Successfully tested  	|
+| Rocky Linux 8 | Successfully tested.  |
 
 
 Pre-Setup Debian and Ubuntu
