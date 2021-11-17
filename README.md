@@ -26,8 +26,8 @@ Install default packages:
 apt install coreutils bc procps hostname sed mawk grep bind9-host lsb-release git
 ~~~
 
-Pre-Setup CentOS and RedHat
----------------------------
+Pre-Setup CentOS, Rocky Linux and RedHat
+----------------------------------------
 
 Install default packages:
 
