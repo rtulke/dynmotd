@@ -40,13 +40,20 @@ C_BROWN="\033[0;33m"        # Brown/Orangen
 C_YELLOW="\033[1;33m"       # Yellow
 
 
-## color schemes
+#### color schemes
 
-# DOT, day of the tentacle scheme
+## DOT, day of the tentacle scheme
 F1=${C_GREY}
 F2=${C_PINK}
 F3=${C_LGREEN}
 F4=${C_RED}
+
+## retro hacker
+#F1=${C_GREEN}
+#F2=${C_GREEN}
+#F3=${C_GREEN}
+#F4=${C_RED}
+
 
 
 ## don't start as root
@@ -415,18 +422,20 @@ case "$1" in
     ;;
 
     help|-h|--help|?)
-        echo
-        echo "Usage: $0 [-c|-a|-d|--help] <params>"
-        echo
-        echo "    e.g. $0 -a \"start web migration\"  "
-        echo
-        echo "    Parameter:"
-        echo
-        echo "      -a | addlog  | --addlog \"...\"             add new log entry"
-        echo "      -d | rmlog   | --rmlog [loglinenumber]      delete specific log entry"
-        echo "      -l | log     | --log                        list complete log"
-        echo "      -c | config  | --config                     configuration setup"
-        echo ""
+
+    echo -e "
+
+        Usage: $0 [-c|-a|-d|--help] <params>
+
+        e.g. $0 -a \"start web migration\"
+
+        Parameter:
+
+            -a | addlog  | --addlog \"...\"               add new log entry
+            -d | rmlog   | --rmlog [loglinenumber]      delete specific log entry
+            -l | log     | --log                        list complete log
+            -c | config  | --config                     configuration setup
+     "
     ;;
 
 esac
