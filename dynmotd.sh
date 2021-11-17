@@ -194,6 +194,9 @@ function show_system_info () {
         ## get runnig sles distribution name
         DISTRIBUTION=$(lsb_release -s -d)
 
+        ## get hardware platform
+        PLATFORM=$(uname -m)
+
         ## get system uptime
         UPTIME=$(uptime |cut -c2- |cut -d, -f1)
 
@@ -227,7 +230,7 @@ ${F2}============[ ${F1}System Data${F2} ]======================================
 ${F1}        Hostname ${F2}= ${F3}$HOSTNAME
 ${F1}         Address ${F2}= ${F3}$IP
 ${F1}          Kernel ${F2}= ${F3}$UNAME
-${F1}    Distribution ${F2}= ${F3}$DISTRIBUTION
+${F1}    Distribution ${F2}= ${F3}$DISTRIBUTION ${PLATFORM}
 ${F1}          Uptime ${F2}= ${F3}$UPTIME
 ${F1}             CPU ${F2}= ${F3}$CPUS x $CPUMODEL
 ${F1}          Memory ${F2}= ${F3}$MEMFREE MB Free of $MEMMAX MB Total
