@@ -29,6 +29,12 @@ Install Debian default packages:
 apt install coreutils bc procps hostname sed mawk grep bind9-host lsb-release git
 ~~~
 
+Install RedHat default packages:
+
+~~~
+yum install redhat-lsb-core bc git
+~~~
+
 Installation
 ------------
 
