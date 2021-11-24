@@ -83,12 +83,13 @@ You can enable or disable information blocks
 
 ~~~
 ## enable system related information about your system
-SYSTEM_INFO="1"
-STORAGE_INFO="1"
-USER_INFO="1"
-ENVIRONMENT_INFO="1"
-MAINTENANCE_INFO="0"
-VERSION_INFO="1"
+SYSTEM_INFO="1"             # show system information
+STORAGE_INFO="1"            # show storage information
+USER_INFO="1"               # show some user infomration
+ENVIRONMENT_INFO="1"        # show environement information
+MAINTENANCE_INFO="1"        # show maintenance infomration
+UPDATE_INFO="0"             # show update information, deactivate when using redhat
+VERSION_INFO="1"            # show the version banner
 ~~~
 
  * 1 = enable
