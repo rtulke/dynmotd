@@ -3,6 +3,15 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 
 ![Example](/data/dynmotd.png)
 
+# Useful Functions
+* easy to create own color schemes
+* enabling or disabling information sections
+* specific system description for each system
+* maintenance logging
+* only one shell script
+* multi OS support
+* easily extendable
+* less dependencies
 
 # Tested Linux Distributions
 
@@ -12,6 +21,7 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 | Debian 8     	| Successfully tested   |
 | Debian 9     	| Successfully tested  	|
 | Debian 10    	| Successfully tested  	|
+| Debian 11    	| Successfully tested  	|
 | Ubuntu 18     | Successfully tested  	|
 | Ubuntu 20     | Successfully tested  	|
 | Rocky Linux 8 | Successfully tested.  |
