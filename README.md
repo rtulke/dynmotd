@@ -28,8 +28,8 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 | Raspberry Pi OS | Successfully tested.  |
 
 
-Pre-Setup Debian and Ubuntu
----------------------------
+Pre-Setup Debian,Rasbian and Ubuntu 
+-----------------------------------
 
 Install default packages:
 
