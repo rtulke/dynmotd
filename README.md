@@ -15,16 +15,17 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 
 # Tested Linux Distributions
 
-| Distribution 	| Status                |
-|--------------	|----------------------	|
-| CentOS 8     	| Successfully tested   |
-| Debian 8     	| Successfully tested   |
-| Debian 9     	| Successfully tested  	|
-| Debian 10    	| Successfully tested  	|
-| Debian 11    	| Successfully tested  	|
-| Ubuntu 18     | Successfully tested  	|
-| Ubuntu 20     | Successfully tested  	|
-| Rocky Linux 8 | Successfully tested.  |
+| Distribution 	  | Status                |
+|-----------------|-----------------------|
+| CentOS 8     	  | Successfully tested   |
+| Debian 8        | Successfully tested   |
+| Debian 9     	  | Successfully tested   |
+| Debian 10       | Successfully tested   |
+| Debian 11    	  | Successfully tested   |
+| Ubuntu 18       | Successfully tested   |
+| Ubuntu 20       | Successfully tested   |
+| Rocky Linux 8   | Successfully tested.  |
+| Raspberry Pi OS | Successfully tested.  |
 
 
 Pre-Setup Debian and Ubuntu
