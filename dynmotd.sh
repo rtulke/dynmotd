@@ -6,7 +6,7 @@
 
 
 ## version
-VERSION="dynmotd v1.7"
+VERSION="dynmotd v1.8"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -20,7 +20,6 @@ ENVIRONMENT_INFO="1"        # show environement information
 MAINTENANCE_INFO="0"        # show maintenance infomration
 UPDATE_INFO="1"             # show update information
 VERSION_INFO="1"            # show the version banner
-REBOOT_REQUIRED_INFO="1"    # show if system reboot is required auf update
 
 LIST_LOG_ENTRY="2"          # how many log line will be display in MAINTENANCE_INFO
 
@@ -242,35 +241,20 @@ ${F1}       Processes ${F2}= ${F3}$PROCCOUNT of $PROCMAX MAX${F1}"
     fi
 }
 
-## Information about the reboot status of installed packages
-function show_reboot_required_info () {
-
-
-    if [ "$REBOOT_REQUIRED_INFO" = "1" ]; then
-
-        if [ -f /var/run/reboot-required ]; then
-            REBOOT_REQUIRED=$(echo "Yes")
-            REBOOT_PACKAGES=$(cat /var/run/reboot-required.pkgs)
-        else
-            REBOOT_REQUIRED=$(echo "No")
-            REBOOT_PACKAGES=$(echo "")
-        fi
-
-
-## display reboot required information
-echo -e "
-${F2}============[ ${F1}Reboot Required Info${F2} ]===========================================
-${F1}Reboot Required ${F2}= ${F3}${REBOOT_REQUIRED}${F1}
-${F1}Reboot Packages ${F2}= ${F3}${REBOOT_PACKAGES}${F1}"
-    fi
-}
-
 
 ## Storage Information only for APT based distributionss
 function show_update_info () {
 
     if [ ! -f /usr/bin/apt-get ]; then
         exit 1
+    fi
+    
+    if [ -f /var/run/reboot-required ]; then
+        REBOOT_REQUIRED=$(echo "Yes")
+        REBOOT_PACKAGES=$(cat /var/run/reboot-required.pkgs)
+    else
+        REBOOT_REQUIRED=$(echo "No")
+        REBOOT_PACKAGES=$(echo "0")
     fi
 
     if [ "$UPDATE_INFO" = "1" ]; then
@@ -281,7 +265,9 @@ function show_update_info () {
 ## display storage information
 echo -e "
 ${F2}============[ ${F1}Update Info${F2} ]====================================================
-${F1}Available Updates ${F2}= ${F3}${UPDATES}${F1}"
+${F1}Available Updates ${F2}= ${F3}${UPDATES}${F1}
+${F1}  Reboot Required ${F2}= ${F3}${REBOOT_REQUIRED}${F1}
+${F1}  Reboot Packages ${F2}= ${F3}${REBOOT_PACKAGES}${F1}"
     fi
 }
 
@@ -425,7 +411,6 @@ function show_info () {
     show_storage_info
     show_user_info
     show_update_info
-    show_reboot_required_info
     show_environment_info
     show_maintenance_info
     show_version_info
