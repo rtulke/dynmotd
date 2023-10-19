@@ -63,8 +63,9 @@ Test dynmotd
 
 ~~~
 exit
-sudo -i or try ssh reconnect
+sudo -i
 ~~~
+or try ssh reconnect to your system
 
 Parameter 
 ---------
