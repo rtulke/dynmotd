@@ -89,11 +89,11 @@ function createenv {
 
         echo "We want to assign a function name for $(hostname --fqdn)"
         echo
-        echo -n "System Function, like Webserver, Mailserver [${1}]: "
+        echo -n "System Function, like Webserver, Mailserver e.g. [${1}]: "
         read SYSFUNCTION
-    	echo -n "System Environment, like PRD|TST|ITG [${2}]: "
+    	echo -n "System Environment, like DEV|TST|INT|PRD [${2}]: "
     	read SYSENV
-        echo -n "Service Level Agreement, like SLA1|SLA2|SLA3: [${3}] "
+        echo -n "Service Level Agreement, like SLA1|SLA2|SLA3|None: [${3}] "
         read SYSSLA
         rm -rf $ENVFILE
         mkdir -p $(dirname $ENVFILE)
@@ -173,6 +173,34 @@ function listlog () {
         echo -e "${F2}$COUNT ${F1}$NAME${F2}"
         COUNT=$((COUNT+1))
     done < $MAINLOG
+}
+
+#### install itself
+function install_itself () {
+    
+
+    # if dynmotd does not exist then install it
+    if [ ! -f /usr/local/bin/dynmotd ]; then
+        
+        echo -n "Install dynmotd... "
+        cat $0 > /usr/local/bin/dynmotd
+        chmod ugo+rwx /usr/local/bin/dynmotd
+        echo "/usr/local/bin/dynmotd" > /etc/profile.d/motd.sh
+
+        ## install geopiplookup
+        #if [ -f /etc/debian_version ]; then
+        #    
+        #    apt upgrade -y -qq 
+        #    apt install geoip-bin geoip-database geoipupdate -y -qq /dev/null 2>&1
+        #    if [[ ! $? -eq 0 ]]; then
+        #        echo -e "${F1}Something went wrong${F2}"
+        #    fi
+        #fi
+
+        echo "done."
+    else
+        echo "Nothing to do dynmotd is already installed!"
+    fi
 }
 
 
@@ -442,15 +470,19 @@ case "$1" in
         listlog
     ;;
 
-    config|-c|--config|setup|-s|--setup)
+    config|-c|--config|setup|-s|--set)
         createenv
+    ;;
+    
+    install|-i|--install)
+        install_itself
     ;;
 
     help|-h|--help|?)
 
     echo -e "
 
-        Usage: $0 [-c|-a|-d|--help] <params>
+        Usage: $0 [-c|-a|-d|--install|--help] <params>
 
         e.g. $0 -a \"start web migration\"  
 
@@ -460,6 +492,7 @@ case "$1" in
             -d | rmlog   | --rmlog [loglinenumber]      delete specific log entry
             -l | log     | --log                        list complete log
             -c | config  | --config                     configuration setup
+            -i | install | --install                    install dynmodt
      " 
     ;;
 
