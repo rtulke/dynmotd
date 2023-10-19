@@ -56,7 +56,7 @@ Script runs only as root.
 sudo -i
 git clone https://github.com/rtulke/dynmotd.git
 cd dynmotd
-./dynmotd --install
+./dynmotd.sh --install
 ~~~
 
 Test dynmotd
