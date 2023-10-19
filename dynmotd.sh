@@ -1,4 +1,4 @@
-#!/bin/bash
+!/bin/bash
 
 # dynamic message of the day
 # Robert Tulke, rt@debian.sh
@@ -199,7 +199,18 @@ function install_itself () {
 
         echo "done."
     else
-        echo "Nothing to do dynmotd is already installed!"
+        echo -n "It seems like dynmotd is already installed, should I overwrite it? [Y|n] : "
+        read OPT
+
+        if [[ "Y" == "$OPT" ]]; then
+            echo -n "Install dynmotd... "
+            cat $0 > /usr/local/bin/dynmotd
+            chmod ugo+rwx /usr/local/bin/dynmotd
+            echo "/usr/local/bin/dynmotd" > /etc/profile.d/motd.sh
+            echo "done."
+        else
+            echo "Nothing to do..."
+        fi
     fi
 }
 
@@ -346,7 +357,7 @@ function show_user_info () {
         SUPERUSERCOUNT=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |wc -l)
 
         ## who is super user (ignore root@)
-        SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk -F '== ' '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
+        SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
 
         ## count sshkeys
         KEYUSERCOUNT=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |wc -l)
