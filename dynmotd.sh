@@ -3,8 +3,10 @@
 # dynamic message of the day
 # Robert Tulke, rt@debian.sh
 
+
+
 ## version
-VERSION="dynmotd v1.6"
+VERSION="dynmotd v1.7"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -16,27 +18,46 @@ STORAGE_INFO="1"            # show storage information
 USER_INFO="1"               # show some user infomration
 ENVIRONMENT_INFO="1"        # show environement information
 MAINTENANCE_INFO="0"        # show maintenance infomration
+UPDATE_INFO="1"             # show update information
 VERSION_INFO="1"            # show the version banner
+REBOOT_REQUIRED_INFO="1"    # show if system reboot is required auf update
 
 LIST_LOG_ENTRY="2"          # how many log line will be display in MAINTENANCE_INFO
 
 
 ## some colors
-C_RED="\033[0;31m"
-C_BLUE="\033[0;34m"
-C_BLACK="\033[0;30m"
-C_CYAN="\033[0;36m"
-C_PINK="\033[0;35m"
-C_GREY="\033[0;37m"
-C_LGREEN="\033[1;32m"
+C_BLACK="\033[0;30m"        # Black
+C_DGRAY="\033[1;30m"        # Dark Grey
+C_GREY="\033[0;37m"         # Grey
+C_WHITE="\033[1;37m"        # White
+C_RED="\033[0;31m"          # Red
+C_LRED="\033[1;31m"         # Light Red
+C_BLUE="\033[0;34m"         # Blue
+C_LBLUE="\033[1;34m"        # Blue
+C_CYAN="\033[0;36m"         # Cyan
+C_LCYAN="\033[1;36m"        # Light Cyan
+C_PINK="\033[0;35m"         # Purple
+C_PINK="\033[1;35m"         # Light Purple
+C_GREEN="\033[0;32m"        # Green
+C_LGREEN="\033[1;32m"       # Light Green
+C_BROWN="\033[0;33m"        # Brown/Orangen
+C_YELLOW="\033[1;33m"       # Yellow
 
 
-## color schemes
-# DOT, day of the tentacle scheme
+#### color schemes
+
+## DOT, day of the tentacle scheme
 F1=${C_GREY}
 F2=${C_PINK}
 F3=${C_LGREEN}
 F4=${C_RED}
+
+## retro hacker
+#F1=${C_GREEN}
+#F2=${C_GREEN}
+#F3=${C_GREEN}
+#F4=${C_RED}
+
 
 
 ## don't start as root
@@ -44,6 +65,7 @@ if [ $(whoami) != root ]; then
     cat /etc/motd
     exit 0
 fi
+
 
 
 #### Configuration Part
@@ -172,17 +194,10 @@ function show_system_info () {
         UNAME=$(uname -r)
 
         ## get runnig sles distribution name
-        if [ -f /etc/SuSE-release ]; then
-            VERSION=$(cat /etc/SuSE-release |egrep SUSE -m 1)
-            PATCHLEVEL=$(cat /etc/SuSE-release |egrep PATCHLEVEL |awk -F '= ' {'print $2'})
-	    DISTRIBUTION="$VERSION SP$PATCHLEVEL"
-        fi
+        DISTRIBUTION=$(lsb_release -s -d)
 
-        ## get runnig distribution name
-        if [ -f /etc/debian_version ]; then
-            PATCHLEVEL=$(cat /etc/debian_version)
-            DISTRIBUTION="Debian GNU/Linux $PATCHLEVEL"
-        fi
+        ## get hardware platform
+        PLATFORM=$(uname -m)
 
         ## get system uptime
         UPTIME=$(uptime |cut -c2- |cut -d, -f1)
@@ -213,11 +228,11 @@ function show_system_info () {
 
 ## display system information
 echo -e "
-${F2}============[ ${F1}System Data${F2} ]====================================================
+${F2}============[ ${F1}System Info${F2} ]====================================================
 ${F1}        Hostname ${F2}= ${F3}$HOSTNAME
 ${F1}         Address ${F2}= ${F3}$IP
 ${F1}          Kernel ${F2}= ${F3}$UNAME
-${F1}    Distribution ${F2}= ${F3}$DISTRIBUTION
+${F1}    Distribution ${F2}= ${F3}$DISTRIBUTION ${PLATFORM}
 ${F1}          Uptime ${F2}= ${F3}$UPTIME
 ${F1}             CPU ${F2}= ${F3}$CPUS x $CPUMODEL
 ${F1}          Memory ${F2}= ${F3}$MEMFREE MB Free of $MEMMAX MB Total
@@ -227,6 +242,48 @@ ${F1}       Processes ${F2}= ${F3}$PROCCOUNT of $PROCMAX MAX${F1}"
     fi
 }
 
+## Information about the reboot status of installed packages
+function show_reboot_required_info () {
+
+
+    if [ "$REBOOT_REQUIRED_INFO" = "1" ]; then
+
+        if [ -f /var/run/reboot-required ]; then
+            REBOOT_REQUIRED=$(echo "Yes")
+            REBOOT_PACKAGES=$(cat /var/run/reboot-required.pkgs)
+        else
+            REBOOT_REQUIRED=$(echo "No")
+            REBOOT_PACKAGES=$(echo "")
+        fi
+
+
+## display reboot required information
+echo -e "
+${F2}============[ ${F1}Reboot Required Info${F2} ]===========================================
+${F1}Reboot Required ${F2}= ${F3}${REBOOT_REQUIRED}${F1}
+${F1}Reboot Packages ${F2}= ${F3}${REBOOT_PACKAGES}${F1}"
+    fi
+}
+
+
+## Storage Information only for APT based distributionss
+function show_update_info () {
+
+    if [ ! -f /usr/bin/apt-get ]; then
+        exit 1
+    fi
+
+    if [ "$UPDATE_INFO" = "1" ]; then
+
+        ## get outdated updates
+        UPDATES=$(/usr/bin/apt-get -s dist-upgrade |egrep  "upgraded" |egrep "newly installed" |awk {'print $1'})
+
+## display storage information
+echo -e "
+${F2}============[ ${F1}Update Info${F2} ]====================================================
+${F1}Available Updates ${F2}= ${F3}${UPDATES}${F1}"
+    fi
+}
 
 ## Storage Informations
 function show_storage_info () {
@@ -238,7 +295,7 @@ function show_storage_info () {
 
 ## display storage information
 echo -e "
-${F2}============[ ${F1}Storage Data${F2} ]===================================================
+${F2}============[ ${F1}Storage Info${F2} ]===================================================
 ${F3}${STORAGE}${F1}"
 
     fi
@@ -336,14 +393,13 @@ function show_maintenance_info () {
 
         ## get latest maintenance information
         MAINTENANCE=$(listlog |head -n${LIST_LOG_ENTRY})
-
+    fi
 
 ## display maintenance information
 echo -e "
 ${F2}============[ ${F1}Maintenance Information${F2} ]========================================
 ${F4}$MAINTENANCE${F1}"
 
-    fi
 }
 
 
@@ -368,6 +424,8 @@ function show_info () {
     show_system_info
     show_storage_info
     show_user_info
+    show_update_info
+    show_reboot_required_info
     show_environment_info
     show_maintenance_info
     show_version_info
@@ -404,18 +462,20 @@ case "$1" in
     ;;
 
     help|-h|--help|?)
-        echo
-        echo "Usage: $0 [-c|-a|-d|--help] <params>"
-        echo
-        echo "    e.g. $0 -a \"start web migration\"  "
-        echo
-        echo "    Parameter:"
-        echo
-        echo "      -a | addlog  | --addlog \"...\"           add new log entry"
-        echo "      -d | rmlog   | --rmlog [loglinenumber]    delete specific log entry"
-        echo "      -l | log     | --log                      list complete log"
-        echo "      -c | config  | --config                   configuration setup"
-        echo ""
+
+    echo -e "
+
+        Usage: $0 [-c|-a|-d|--help] <params>
+
+        e.g. $0 -a \"start web migration\"  
+
+        Parameter:
+       
+            -a | addlog  | --addlog \"...\"               add new log entry
+            -d | rmlog   | --rmlog [loglinenumber]      delete specific log entry
+            -l | log     | --log                        list complete log
+            -c | config  | --config                     configuration setup
+     " 
     ;;
 
 esac
