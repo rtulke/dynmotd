@@ -17,16 +17,10 @@ SYSTEM_INFO="1"             # show system information
 STORAGE_INFO="1"            # show storage information
 USER_INFO="1"               # show some user infomration
 ENVIRONMENT_INFO="1"        # show environement information
-<<<<<<< HEAD
 MAINTENANCE_INFO="0"        # show maintenance infomration
 UPDATE_INFO="1"             # show update information
-=======
-MAINTENANCE_INFO="1"        # show maintenance infomration
-UPDATE_INFO="0"             # show update information, deactivate when using redhat
->>>>>>> da8f1bec58cb9290cb1f39e410b524d3b52181f4
 VERSION_INFO="1"            # show the version banner
 REBOOT_REQUIRED_INFO="1"    # show if system reboot is required auf update
-
 
 LIST_LOG_ENTRY="2"          # how many log line will be display in MAINTENANCE_INFO
 
@@ -248,7 +242,6 @@ ${F1}       Processes ${F2}= ${F3}$PROCCOUNT of $PROCMAX MAX${F1}"
     fi
 }
 
-<<<<<<< HEAD
 ## Information about the reboot status of installed packages
 function show_reboot_required_info () {
 
@@ -289,23 +282,6 @@ function show_update_info () {
 echo -e "
 ${F2}============[ ${F1}Update Info${F2} ]====================================================
 ${F1}Available Updates ${F2}= ${F3}${UPDATES}${F1}"
-=======
-## Update Information only for APT based distributions
-function show_update_info () {
-
-    if [  -f /usr/bin/apt-get ]; then
-
-        if [ "$UPDATE_INFO" = "1" ]; then
-
-            ## get outdated updates
-            UPDATES=$(/usr/bin/apt-get -s dist-upgrade |egrep  "upgraded" |egrep "newly installed" |awk {'print $1'})
-
-## display update information
-echo -e "
-${F2}============[ ${F1}Update Info${F2} ]====================================================
-${F1}Available Updates ${F2}= ${F3}${UPDATES}${F1}"
-        fi
->>>>>>> da8f1bec58cb9290cb1f39e410b524d3b52181f4
     fi
 }
 
@@ -449,10 +425,7 @@ function show_info () {
     show_storage_info
     show_user_info
     show_update_info
-<<<<<<< HEAD
     show_reboot_required_info
-=======
->>>>>>> da8f1bec58cb9290cb1f39e410b524d3b52181f4
     show_environment_info
     show_maintenance_info
     show_version_info
@@ -494,26 +467,15 @@ case "$1" in
 
         Usage: $0 [-c|-a|-d|--help] <params>
 
-<<<<<<< HEAD
         e.g. $0 -a \"start web migration\"  
 
         Parameter:
        
-=======
-        e.g. $0 -a \"start web migration\"
-
-        Parameter:
-
->>>>>>> da8f1bec58cb9290cb1f39e410b524d3b52181f4
             -a | addlog  | --addlog \"...\"               add new log entry
             -d | rmlog   | --rmlog [loglinenumber]      delete specific log entry
             -l | log     | --log                        list complete log
             -c | config  | --config                     configuration setup
-<<<<<<< HEAD
      " 
-=======
-     "
->>>>>>> da8f1bec58cb9290cb1f39e410b524d3b52181f4
     ;;
 
 esac
