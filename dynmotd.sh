@@ -6,7 +6,7 @@
 
 
 ## version
-VERSION="dynmotd v1.8"
+VERSION="dynmotd v1.9"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"

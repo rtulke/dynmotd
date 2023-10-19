@@ -22,6 +22,7 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 | Debian 9     	  | Successfully tested   |
 | Debian 10       | Successfully tested   |
 | Debian 11    	  | Successfully tested   |
+| Debian 12       | Successfully tested   |
 | Ubuntu 18       | Successfully tested   |
 | Ubuntu 20       | Successfully tested   |
 | Rocky Linux 8   | Successfully tested.  |
@@ -55,23 +56,21 @@ Script runs only as root.
 sudo -i
 git clone https://github.com/rtulke/dynmotd.git
 cd dynmotd
-cp dynmotd.sh /usr/local/bin/dynmotd
-chmod 777 /usr/local/bin/dynmotd
-echo "/usr/local/bin/dynmotd" > /etc/profile.d/motd.sh
+./dynmotd --install
 ~~~
 
 Test dynmotd
 
 ~~~
 exit
-sudo -i
+sudo -i or try ssh reconnect
 ~~~
 
 Parameter 
 ---------
 
 ~~~
-Usage: dynmotd [-c|-a|-d|--help] <params>
+Usage: dynmotd [-c|-a|-d|--install|--help] <params>
 
     e.g. dynmotd -a "start web migration"
 
@@ -81,6 +80,7 @@ Usage: dynmotd [-c|-a|-d|--help] <params>
       -d | rmlog   | --rmlog [loglinenumber]    to delete a specific log entry use -l to identify
       -l | log     | --log                      list complete log
       -c | config  | --config                   configuration setup
+      -i | install | --install                  install dynmotd
 ~~~
 
 Some dynmotd Options
