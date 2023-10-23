@@ -357,7 +357,10 @@ function show_user_info () {
         SUPERUSERCOUNT=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |wc -l)
 
         ## who is super user (ignore root@)
-        SUPERUSER=$(echo $(for user in $(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}'); do echo -n "${user}, "; done) |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+        #SUPERUSER=$(echo $(for user in $(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}'); do echo -n "${user}, "; done) |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+
+        SUPERUSER=$(echo $(readarray -t rows < /root/.ssh/authorized_keys; for row in "${rows[@]}"; do row_array=(${row}); third=${row_array[2]}; if [ -z $third ]; then echo -n "- Unknown -, "; else echo -n "${third}, "; fi; done) |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/,$//' )
+
 #        SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
 
         ## count sshkeys
