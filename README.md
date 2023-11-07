@@ -77,11 +77,12 @@ Usage: dynmotd [-c|-a|-d|--install|--help] <params>
 
     Parameter:
 
-      -a | addlog  | --addlog "..."             add new log entry
-      -d | rmlog   | --rmlog [loglinenumber]    to delete a specific log entry use -l to identify
-      -l | log     | --log                      list complete log
-      -c | config  | --config                   configuration setup
-      -i | install | --install                  install dynmotd
+    -a | addlog    | --addlog "..."             add new log entry
+    -d | rmlog     | --rmlog [loglinenumber]    to delete a specific log entry use -l to identify
+    -l | log       | --log                      list complete log
+    -c | config    | --config                   configuration setup
+    -i | install   | --install                  install dynmotd
+    -u | uninstall | --uninstall                uninstall dynmotd
 ~~~
 
 Some dynmotd Options
