@@ -177,11 +177,11 @@ function listlog () {
 
 #### install itself
 function install_itself () {
-    
+
 
     # if dynmotd does not exist then install it
     if [ ! -f /usr/local/bin/dynmotd ]; then
-        
+
         echo -n "Install dynmotd... "
         cat $0 > /usr/local/bin/dynmotd
         chmod ugo+rwx /usr/local/bin/dynmotd
@@ -189,8 +189,8 @@ function install_itself () {
 
         ## install geopiplookup
         #if [ -f /etc/debian_version ]; then
-        #    
-        #    apt upgrade -y -qq 
+        #
+        #    apt upgrade -y -qq
         #    apt install geoip-bin geoip-database geoipupdate -y -qq /dev/null 2>&1
         #    if [[ ! $? -eq 0 ]]; then
         #        echo -e "${F1}Something went wrong${F2}"
@@ -213,6 +213,16 @@ function install_itself () {
         fi
     fi
 }
+
+#### uninstall itself
+function uninstall_itself () {
+
+    rm -rf /usr/local/bin/dynmotd
+    rm -rf /etc/profile.d/motd.sh
+    rm -rf /root/.dynmotd
+
+}
+
 
 
 #### Output Part
@@ -287,7 +297,7 @@ function show_update_info () {
     if [ ! -f /usr/bin/apt-get ]; then
         exit 1
     fi
-    
+
     if [ -f /var/run/reboot-required ]; then
         REBOOT_REQUIRED=$(echo "Yes")
         REBOOT_PACKAGES=$(cat /var/run/reboot-required.pkgs)
@@ -488,9 +498,13 @@ case "$1" in
     config|-c|--config|setup|-s|--set)
         createenv
     ;;
-    
+
     install|-i|--install)
         install_itself
+    ;;
+
+    uninstall|-u|--uninstall)
+        uninstall_itself
     ;;
 
     help|-h|--help|?)
@@ -499,16 +513,17 @@ case "$1" in
 
         Usage: $0 [-c|-a|-d|--install|--help] <params>
 
-        e.g. $0 -a \"start web migration\"  
+        e.g. $0 -a \"start web migration\"
 
         Parameter:
-       
-            -a | addlog  | --addlog \"...\"               add new log entry
-            -d | rmlog   | --rmlog [loglinenumber]      delete specific log entry
-            -l | log     | --log                        list complete log
-            -c | config  | --config                     configuration setup
-            -i | install | --install                    install dynmodt
-     " 
+
+           -a | addlog    | --addlog \"...\"               add new log entry
+           -d | rmlog     | --rmlog [loglinenumber]      delete specific log entry
+           -l | log       | --log                        list complete log
+           -c | config    | --config                     configuration setup
+           -i | install   | --install                    install dynmotd
+           -u | uninstall | --uninstall                  uninstall dynmotd
+     "
     ;;
 
 esac
