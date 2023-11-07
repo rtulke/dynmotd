@@ -431,7 +431,7 @@ function show_maintenance_info () {
     if [ "$MAINTENANCE_INFO" = "1" ]; then
 
         ## get latest maintenance information
-        MAINTENANCE=$(listlog |head -n${LIST_LOG_ENTRY})
+        MAINTENANCE=$(dynmotd --listlog |head -n${LIST_LOG_ENTRY})
     fi
 
 ## display maintenance information
