@@ -116,7 +116,7 @@ LIST_LOG_ENTRY="5"
 Known Issues
 ------------
 
-## The FQDN or hostname is not displayed correctly?
+### The FQDN or hostname is not displayed correctly?
 The FQDN Full Qualifiyed Domain Name is not displayed correctly if it has not been made known to the system in the /etc/hostname file. In this case, the matching exposed IP can also be displayed correctly.
 
 Example
@@ -143,3 +143,5 @@ hostname --fqdn
 mail.linux-hub.ch
 ~~~
 
+### UPDATE_INFO="1" displays errors
+When I have activated UPDATE_INFO="1" I get errors. This may be because you are not working on a Debian based system. If you are not working on a Debian based system you should set the option UPDATE_INFO="0" so that this info block is not displayed.  Maybe this will be a feature for the future.
