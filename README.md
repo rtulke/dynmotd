@@ -117,14 +117,14 @@ Known Issues
 ------------
 
 ### The FQDN or hostname is not displayed correctly?
-The FQDN Full Qualifiyed Domain Name is not displayed correctly if it has not been made known to the system in the /etc/hostname file. In this case, the matching exposed IP can also be displayed correctly.
+The FQDN Full Qualifiyed Domain Name is not displayed correctly if it has not been made known to the system in the /etc/hostname file. In this case, the matching exposed IP cannot be displayed correctly either.
 
-Example
-The command: `hostname --fqdn` produces the following output:
+Example: The command: `hostname --fqdn` produces the following output:
+~~~
 mail
+~~~
 
 This is probably due to the fact that only debmej has been entered in the /etc/hostname file. 
-
 This can be remedied as follows:
 ~~~
 hostname subdomain.domain.tld
