@@ -128,7 +128,7 @@ This is probably due to the fact that only "mail" has been entered in the /etc/h
 This can be remedied as follows:
 ~~~
 hostname subdomain.domain.tld
-echo "subdomain.domain.tld"
+echo "subdomain.domain.tld" >/etc/hostname
 ~~~
 
 Example:
