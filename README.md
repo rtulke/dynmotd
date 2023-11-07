@@ -124,7 +124,7 @@ Example: The command: `hostname --fqdn` produces the following output:
 mail
 ~~~
 
-This is probably due to the fact that only debmej has been entered in the /etc/hostname file. 
+This is probably due to the fact that only "mail" has been entered in the /etc/hostname file. 
 This can be remedied as follows:
 ~~~
 hostname subdomain.domain.tld
