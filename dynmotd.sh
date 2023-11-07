@@ -32,14 +32,14 @@ C_WHITE="\033[1;37m"        # White
 C_RED="\033[0;31m"          # Red
 C_LRED="\033[1;31m"         # Light Red
 C_BLUE="\033[0;34m"         # Blue
-C_LBLUE="\033[1;34m"        # Blue
+C_LBLUE="\033[1;34m"        # Light Blue
 C_CYAN="\033[0;36m"         # Cyan
 C_LCYAN="\033[1;36m"        # Light Cyan
 C_PINK="\033[0;35m"         # Purple
 C_PINK="\033[1;35m"         # Light Purple
 C_GREEN="\033[0;32m"        # Green
 C_LGREEN="\033[1;32m"       # Light Green
-C_BROWN="\033[0;33m"        # Brown/Orangen
+C_BROWN="\033[0;33m"        # Brown/Orange
 C_YELLOW="\033[1;33m"       # Yellow
 
 
