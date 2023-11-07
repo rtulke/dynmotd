@@ -201,7 +201,7 @@ function install_itself () {
 
         echo "done."
     else
-        echo -n "It seems like dynmotd is already installed, should I overwrite it? [Y|n] : "
+        echo -n "It seems like dynmotd is already installed, should I overwrite it? [Y|n]: "
         read OPT
 
         if [[ "Y" == "$OPT" ]]; then
