@@ -145,3 +145,6 @@ mail.linux-hub.ch
 
 ### UPDATE_INFO="1" displays errors
 When I have activated UPDATE_INFO="1" I get errors. This may be because you are not working on a Debian based system. If you are not working on a Debian based system you should set the option UPDATE_INFO="0" so that this info block is not displayed.  Maybe this will be a feature for the future.
+
+### In "User Data" info block, SshKeyRootUsers shows "- Unkown -"
+This always happens if the SSH key has no comment that indicates which SSH key it is. To fix the problem, you either have to enter an additional name or e-mail address at the end of the key in the ~/.ssh/authorized_keys file using a space or create your SSH keys with ssh-keygen -C "YourNameHere"
