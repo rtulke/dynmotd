@@ -112,3 +112,34 @@ You can also change the number of log lines displayed by changing "LIST_LOG_ENTR
 ~~~
 LIST_LOG_ENTRY="5"
 ~~~
+
+Known Issues
+------------
+
+## The FQDN or hostname is not displayed correctly?
+The FQDN Full Qualifiyed Domain Name is not displayed correctly if it has not been made known to the system in the /etc/hostname file. In this case, the matching exposed IP can also be displayed correctly.
+
+Example
+The command: `hostname --fqdn` produces the following output:
+mail
+
+This is probably due to the fact that only debmej has been entered in the /etc/hostname file. 
+
+This can be remedied as follows:
+~~~
+hostname subdomain.domain.tld
+echo "subdomain.domain.tld"
+~~~
+
+Example:
+~~~
+hostname mail.linux-hub.ch
+echo mail.linux-hub.ch >/etc/hostname
+~~~
+
+You can check it with the following command.
+~~~
+hostname --fqdn
+mail.linux-hub.ch
+~~~
+
