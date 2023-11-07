@@ -86,8 +86,9 @@ function createmaintenance {
 ## create .environment file if not exist
 function createenv {
 
-echo -e "${F2}============[ ${F1}Maintenance Setup${F2} ]========================================${F1}"
-
+echo -e "
+${F2}============[ ${F1}Maintenance Setup${F2} ]==============================================
+${F1}"
         echo "We want to assign a function name for $(hostname --fqdn)"
         echo
         echo -n "System Function, like Webserver, Mailserver e.g. [${1}]: "
