@@ -13,6 +13,12 @@ Dynamic Motd (Message of the Day) an old script to print out some system-specifi
 * easily extendable
 * less dependencies
 
+New features comming soon
+* GeoIP Information
+* Weather Information 
+* better Multi OS support
+* NewsFeeder?
+
 # Tested Linux Distributions
 
 | Distribution 	  | Status                |
