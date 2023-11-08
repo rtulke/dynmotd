@@ -22,7 +22,7 @@ SYSTEM_INFO="1"             # show system information
 STORAGE_INFO="1"            # show storage information
 USER_INFO="1"               # show some user infomration
 ENVIRONMENT_INFO="1"        # show environement information
-MAINTENANCE_INFO="0"        # show maintenance infomration
+MAINTENANCE_INFO="1"        # show maintenance infomration
 UPDATE_INFO="1"             # show update information
 VERSION_INFO="1"            # show the version banner
 
@@ -142,7 +142,7 @@ function rmlog () {
         if [ -z "$1" ]; then
             echo "Usage: "
             echo
-            echo "  ./$(basename $0) -r [line-number] "
+            echo "  ./$(basename $0) -d [line-number] "
             echo
             exit 1
         fi
