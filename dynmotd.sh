@@ -463,15 +463,16 @@ function show_maintenance_info () {
     if [ "$MAINTENANCE_INFO" = "1" ]; then
 
         ## get latest maintenance information
-        MAINTENANCE=$(dynmotd --listlog |head -n${LIST_LOG_ENTRY})
-    fi
+        MAINTENANCE=$(${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME} --listlog |head -n${LIST_LOG_ENTRY})
 
 ## display maintenance information
 echo -e "
 ${F2}============[ ${F1}Maintenance Information${F2} ]========================================
 ${F4}$MAINTENANCE${F1}"
 
+    fi
 }
+
 
 
 ## Version Information

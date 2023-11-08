@@ -59,13 +59,14 @@ cd dynmotd
 ./dynmotd.sh --install
 ~~~
 
-Test dynmotd
+To test dynmotd properly, you should log out of the system and log in again.
+If you have logged in directly via ssh root, log in to the server again.
 
 ~~~
 exit
 sudo -i
 ~~~
-or try ssh reconnect to your system
+
 
 Parameter 
 ---------
