@@ -12,6 +12,11 @@ VERSION="dynmotd v1.9"
 MAINLOG="/root/.dynmotd/maintenance.log"
 ENVFILE="/root/.dynmotd/environment.cfg"
 
+## install path
+DYNMOTD_INSTALL_PATH="/usr/local/bin"     # path where "dynmotd -i" is to be installed /without trailing slash
+DYNMOTD_PROFILE="/etc/profile.d/motd.sh"  # file where dynmotd should be loaded
+DYNMOTD_FILENAME="dynmotd"                # file name to be used for the installation
+
 ## enable system related information about your system
 SYSTEM_INFO="1"             # show system information
 STORAGE_INFO="1"            # show storage information
@@ -59,7 +64,7 @@ F4=${C_RED}
 
 
 
-## don't start as root
+## don't start as non-root
 if [ $(whoami) != root ]; then
     cat /etc/motd
     exit 0
@@ -178,16 +183,16 @@ function listlog () {
 }
 
 #### install itself
-function install_itself () {
+function install () {
 
 
     # if dynmotd does not exist then install it
-    if [ ! -f /usr/local/bin/dynmotd ]; then
+    if [ ! -f ${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME} ]; then
 
         echo -n "Install dynmotd... "
-        cat $0 > /usr/local/bin/dynmotd
-        chmod ugo+rwx /usr/local/bin/dynmotd
-        echo "/usr/local/bin/dynmotd" > /etc/profile.d/motd.sh
+        cat $0 > ${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}
+        chmod ugo+rwx ${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}
+        echo "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}" > $DYNMOTD_PROFILE
 
         ## install geopiplookup
         #if [ -f /etc/debian_version ]; then
@@ -206,9 +211,9 @@ function install_itself () {
 
         if [[ "Y" == "$OPT" ]]; then
             echo -n "Install dynmotd... "
-            cat $0 > /usr/local/bin/dynmotd
-            chmod ugo+rwx /usr/local/bin/dynmotd
-            echo "/usr/local/bin/dynmotd" > /etc/profile.d/motd.sh
+            cat $0 > ${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}
+            chmod ugo+rwx ${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}
+            echo "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}" > $DYNMOTD_PROFILE
             echo "done."
         else
             echo "Nothing to do..."
@@ -217,12 +222,37 @@ function install_itself () {
 }
 
 #### uninstall itself
-function uninstall_itself () {
+function uninstall () {
 
-    rm -rf /usr/local/bin/dynmotd
-    rm -rf /etc/profile.d/motd.sh
-    rm -rf /root/.dynmotd
+    echo "Should the following files be deleted?"
+    echo
+    for rmfile in $DYNMOTD_PROFILE ${MAINLOG} ${ENVFILE} ${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME} ; do
+        
+        if [ -f "$rmfile" ]; then
+            echo $rmfile
+        fi
+    done
 
+    echo
+    echo -n "Please confirm with [Y|n]: "
+    read OPT 
+    echo
+
+    if [[ "Y" == "$OPT" ]]; then
+
+        for rmfile in $DYNMOTD_PROFILE ${MAINLOG} ${ENVFILE} ${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME} ; do
+            rm -rf $rmfile
+            rc=$?
+            if [ ! -z "$rc" ]; then
+                echo "$rmfile successfully removed"
+            else
+                echo "Error: $rmfile cannot removed!"
+                echo "exit $rc"
+            fi
+        done
+    else
+        echo "Nothing to do..."
+    fi
 }
 
 
@@ -502,11 +532,11 @@ case "$1" in
     ;;
 
     install|-i|--install)
-        install_itself
+        install
     ;;
 
     uninstall|-u|--uninstall)
-        uninstall_itself
+        uninstall
     ;;
 
     help|-h|--help|?)
