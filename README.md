@@ -31,6 +31,7 @@ New features comming soon
 | Debian 12       | Successfully tested   |
 | Ubuntu 18       | Successfully tested   |
 | Ubuntu 20       | Successfully tested   |
+| Fedora 38       | Successfully tested   |
 | Rocky Linux 8   | Successfully tested.  |
 | Raspberry Pi OS | Successfully tested.  |
 
