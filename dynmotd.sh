@@ -286,22 +286,22 @@ function show_system_info () {
         CPUS=$(cat /proc/cpuinfo|grep processor|wc -l)
 
         ## get system cpu model
-        CPUMODEL=$(cat /proc/cpuinfo |egrep 'model name' |uniq |awk -F ': ' {'print $2'})
+        CPUMODEL=$(cat /proc/cpuinfo |grep -E 'model name' |uniq |awk -F ': ' {'print $2'})
 
         ## get current free memory
-        MEMFREE=$(echo $(cat /proc/meminfo |egrep MemFree |awk {'print $2'})/1024 |bc)
+        MEMFREE=$(echo $(cat /proc/meminfo |grep -E MemFree |awk {'print $2'})/1024 |bc)
 
         ## get maxium usable memory
-        MEMMAX=$(echo $(cat /proc/meminfo |egrep MemTotal |awk {'print $2'})/1024 |bc)
+        MEMMAX=$(echo $(cat /proc/meminfo |grep -E MemTotal |awk {'print $2'})/1024 |bc)
 
         ## get current free swap space
-        SWAPFREE=$(echo $(cat /proc/meminfo |egrep SwapFree |awk {'print $2'})/1024 |bc)
+        SWAPFREE=$(echo $(cat /proc/meminfo |grep -E SwapFree |awk {'print $2'})/1024 |bc)
 
         ## get maxium usable swap space
-        SWAPMAX=$(echo $(cat /proc/meminfo |egrep SwapTotal |awk {'print $2'})/1024 |bc)
+        SWAPMAX=$(echo $(cat /proc/meminfo |grep -E SwapTotal |awk {'print $2'})/1024 |bc)
 
         ## get current procs
-        PROCCOUNT=$(ps -Afl |egrep -v 'ps|wc' |wc -l)
+        PROCCOUNT=$(ps -Afl |grep -E -v 'ps|wc' |wc -l)
 
         ## get maxium usable procs
         PROCMAX=$(ulimit -u)
@@ -341,7 +341,7 @@ function show_update_info () {
     if [ "$UPDATE_INFO" = "1" ]; then
 
         ## get outdated updates
-        UPDATES=$(/usr/bin/apt-get -s dist-upgrade |egrep  "upgraded" |egrep "newly installed" |awk {'print $1'})
+        UPDATES=$(/usr/bin/apt-get -s dist-upgrade |grep -E  "upgraded" |grep -E "newly installed" |awk {'print $1'})
 
 ## display storage information
 echo -e "
@@ -358,7 +358,7 @@ function show_storage_info () {
     if [ "$STORAGE_INFO" = "1" ]; then
 
         ## get current storage information, how many space a left :)
-        STORAGE=$(df -hT |sort -r -k 6 -i |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' |sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' |egrep -v docker )
+        STORAGE=$(df -hT |sort -r -k 6 -i |sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' |sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' |grep -E -v docker )
 
 ## display storage information
 echo -e "
@@ -390,26 +390,26 @@ function show_user_info () {
         LOGGEDIN=$(echo $(who |awk {'print $1" " $5'} |awk -F '[()]' '{ print $1 $2 '}  |uniq -c |awk {'print "(" $1 ") "$2" " $3","'} ) |sed 's/,$//' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
         ## how many system users are there, only check uid <1000 and has a login shell
-        SYSTEMUSERCOUNT=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |grep '\:\/bin\/bash' |wc -l)
+        SYSTEMUSERCOUNT=$(cat /etc/passwd |grep -E '\:x\:10[0-9][0-9]' |grep '\:\/bin\/bash' |wc -l)
 
         ## who is a system user, only check uid <1000 and has a login shell
-        SYSTEMUSER=$(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |egrep '\:\/bin\/bash|\:\/bin/sh' |awk '{if ($0) print}' |awk -F ':' {'print $1'} |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+        SYSTEMUSER=$(cat /etc/passwd |grep -E '\:x\:10[0-9][0-9]' |grep -E '\:\/bin\/bash|\:\/bin/sh' |awk '{if ($0) print}' |awk -F ':' {'print $1'} |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
         ## how many ssh super user (root) are there
-        SUPERUSERCOUNT=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |wc -l)
+        SUPERUSERCOUNT=$(cat /root/.ssh/authorized_keys |grep -E '^ssh-' |wc -l)
 
         ## who is super user (ignore root@)
-        #SUPERUSER=$(echo $(for user in $(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}'); do echo -n "${user}, "; done) |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+        #SUPERUSER=$(echo $(for user in $(cat /root/.ssh/authorized_keys |grep -E '^ssh-' |awk '{print $NF}'); do echo -n "${user}, "; done) |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
         SUPERUSER=$(echo $(readarray -t rows < /root/.ssh/authorized_keys; for row in "${rows[@]}"; do row_array=(${row}); third=${row_array[2]}; if [ -z $third ]; then echo -n "- Unknown -, "; else echo -n "${third}, "; fi; done) |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' |sed 's/,$//' )
 
-#        SUPERUSER=$(cat /root/.ssh/authorized_keys |egrep '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
+#        SUPERUSER=$(cat /root/.ssh/authorized_keys |grep -E '^ssh-' |awk '{print $NF}' |awk -vq=" " 'BEGIN{printf""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ ,/,/g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g' )
 
         ## count sshkeys
-        KEYUSERCOUNT=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |wc -l)
+        KEYUSERCOUNT=$(for i in $(cat /etc/passwd |grep -E '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |wc -l)
 
         ## print any authorized ssh-key-user of a existing system user
-        KEYUSER=$(for i in $(cat /etc/passwd |egrep '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |awk -vq=" " 'BEGIN {printf ""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ , /, /g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g'  )
+        KEYUSER=$(for i in $(cat /etc/passwd |grep -E '\:x\:10[0-9][0-9]' |awk -F ':' {'print $6'}) ; do cat $i/.ssh/authorized_keys  2> /dev/null |grep ^ssh- |awk '{print substr($0, index($0,$3)) }'; done |awk -vq=" " 'BEGIN {printf ""}{printf(NR>1?",":"")q$0q}END{print""}' |cut -c2- |sed 's/ , /, /g' |sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g'  )
 
 
 ## show user information
