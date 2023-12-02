@@ -137,13 +137,13 @@ This is probably due to the fact that only "mail" has been entered in the /etc/h
 This can be remedied as follows:
 ~~~
 hostname subdomain.domain.tld
-echo "subdomain.domain.tld" >/etc/hostname
+hostname >/etc/hostname
 ~~~
 
 Example:
 ~~~
 hostname mail.linux-hub.ch
-echo mail.linux-hub.ch >/etc/hostname
+hostname >/etc/hostname
 ~~~
 
 You can check it with the following command.
