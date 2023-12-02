@@ -1,7 +1,7 @@
 # dynmotd
 Dynamic Motd (Message of the Day) an old script to print out some system-specific information.
 
-![Example](/data/dynmotd.png)
+![Example](/data/screenshot.png)
 
 # Useful Functions
 * easy to create own color schemes
