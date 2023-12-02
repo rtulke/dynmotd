@@ -108,7 +108,7 @@ SYSTEM_INFO="1"             # show system information
 STORAGE_INFO="1"            # show storage information
 USER_INFO="1"               # show some user infomration
 ENVIRONMENT_INFO="1"        # show environement information
-MAINTENANCE_INFO="1"        # show maintenance infomration
+MAINTENANCE_INFO="1"        # show maintenance information
 UPDATE_INFO="0"             # show update information, deactivate when using redhat
 VERSION_INFO="1"            # show the version banner
 ~~~
