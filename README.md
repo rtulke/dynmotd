@@ -86,9 +86,9 @@ Usage: dynmotd [-c|-a|-d|--install|--help] <params>
     Parameter:
 
     -a | addlog    | --addlog "..."             add new log entry
-    -d | rmlog     | --rmlog [loglinenumber]    to delete a specific log entry use -l to identify
-    -l | log       | --log                      list complete log
-    -c | config    | --config                   configuration setup
+    -d | rmlog     | --rmlog [loglinenumber]    delete a specific log entry by using -l to identify the line number
+    -l | log       | --log                      list log entries
+    -c | config    | --config                   restart setup
     -i | install   | --install                  install dynmotd
     -u | uninstall | --uninstall                uninstall dynmotd
 ~~~
