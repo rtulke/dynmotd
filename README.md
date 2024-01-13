@@ -21,19 +21,14 @@ New features comming soon
 
 # Tested Linux Distributions
 
-| Distribution 	  | Status                |
-|-----------------|----------------------|
-| CentOS 8     	  | Successfully tested  |
-| Debian 8        | Successfully tested  |
-| Debian 9     	  | Successfully tested  |
-| Debian 10       | Successfully tested  |
-| Debian 11    	  | Successfully tested  |
-| Debian 12       | Successfully tested  |
-| Ubuntu 18       | Successfully tested  |
-| Ubuntu 20       | Successfully tested  |
-| Fedora 38       | Successfully tested  |
-| Rocky Linux 8   | Successfully tested  |
-| Raspberry Pi OS | Successfully tested  |
+| Distribution 	     | Status               |
+|--------------------|----------------------|
+| CentOS 8     	     | Successfully tested  |
+| Debian 8 - 12      | Successfully tested  |
+| Ubuntu 18 - 23.10  | Successfully tested  |
+| Fedora 38          | Successfully tested  |
+| Rocky Linux 8      | Successfully tested  |
+| Raspberry Pi OS    | Successfully tested  |
 
 
 Pre-Setup Debian, Rasbian and Ubuntu 
