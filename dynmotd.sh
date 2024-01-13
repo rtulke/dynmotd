@@ -62,6 +62,13 @@ F4=${C_RED}
 #F3=${C_GREEN}
 #F4=${C_RED}
 
+## retro alert
+#F1=${C_RED}
+#F2=${C_RED}
+#F3=${C_RED}
+#F4=${C_RED}
+
+
 
 
 ## don't start as non-root
