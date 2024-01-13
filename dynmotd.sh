@@ -552,8 +552,8 @@ case "$1" in
 
            -a | addlog    | --addlog \"...\"               add new log entry
            -d | rmlog     | --rmlog [loglinenumber]      delete specific log entry
-           -l | log       | --log                        list complete log
-           -c | config    | --config                     configuration setup
+           -l | log       | --log                        list log entries
+           -c | config    | --config                     restart setup
            -i | install   | --install                    install dynmotd
            -u | uninstall | --uninstall                  uninstall dynmotd
      "
