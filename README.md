@@ -23,11 +23,11 @@ New features comming soon
 
 | Distribution 	     | Status               |
 |--------------------|----------------------|
-| CentOS 8     	     | Successfully tested  |
+| CentOS 8 - 9	     | Successfully tested  |
 | Debian 8 - 12      | Successfully tested  |
 | Ubuntu 18 - 23.10  | Successfully tested  |
-| Fedora 38          | Successfully tested  |
-| Rocky Linux 8      | Successfully tested  |
+| Fedora 38 - 39     | Successfully tested  |
+| Rocky Linux 8 - 9  | Successfully tested  |
 | Raspberry Pi OS    | Successfully tested  |
 
 
