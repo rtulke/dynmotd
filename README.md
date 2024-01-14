@@ -37,6 +37,7 @@ Pre-Setup Debian, Rasbian and Ubuntu
 Install default packages:
 
 ~~~
+apt update && apt upgrade
 apt install coreutils bc procps hostname sed mawk grep bind9-host lsb-release git
 ~~~
 
@@ -48,6 +49,16 @@ Install default packages:
 ~~~
 yum install bc bind-utils redhat-lsb-core git 
 ~~~
+
+Alma Linux
+----------
+
+Install default packages:
+
+~~~
+dnf install bc git bind-utils almalinux-release
+~~~
+
 
 Installation
 ------------
