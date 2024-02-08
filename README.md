@@ -131,7 +131,7 @@ LIST_LOG_ENTRY="5"
 Known Issues
 ------------
 
-### The FQDN or hostname is not displayed correctly?
+### The FQDN or hostname or IP Address is not displayed correctly?
 The FQDN Full Qualified Domain Name is not displayed correctly if it has not been made known to the system in the /etc/hostname file. In this case, the matching exposed IP cannot be displayed correctly either.
 
 Example: The command: `hostname --fqdn` produces the following output:
