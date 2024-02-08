@@ -158,6 +158,12 @@ hostname --fqdn
 mail.linux-hub.ch
 ~~~
 
+check also the `/etc/hosts` entry
+
+~~~
+127.0.1.1 mail.linux-hub.ch
+~~~
+
 ### UPDATE_INFO="1" displays errors
 When I have activated UPDATE_INFO="1" I get errors. This may be because you are not working on a Debian based system. If you are not working on a Debian based system you should set the option UPDATE_INFO="0" so that this info block is not displayed.  Maybe this will be a feature for the future.
 
