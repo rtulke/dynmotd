@@ -31,8 +31,8 @@ New features comming soon
 | Raspberry Pi OS    | Successfully tested  |
 
 
-Pre-Setup Debian, Rasbian and Ubuntu 
-------------------------------------
+Pre-Setup Debian, Raspberry PI OS and Ubuntu and all other Debian based Distributions
+-------------------------------------------------------------------------------------
 
 Install default packages:
 
