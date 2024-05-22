@@ -85,7 +85,7 @@ Parameter
 ---------
 
 ~~~
-Usage: dynmotd [-c|-a|-d|--install|--help] <params>
+Usage: dynmotd [-c|-a|-d|--install|--help] <value>
 
     e.g. dynmotd -a "start web migration"
 
