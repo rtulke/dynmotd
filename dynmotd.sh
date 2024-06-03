@@ -26,7 +26,8 @@ MAINTENANCE_INFO="1"        # show maintenance infomration
 UPDATE_INFO="1"             # show update information
 VERSION_INFO="1"            # show the version banner
 
-LIST_LOG_ENTRY="2"          # how many log line will be display in MAINTENANCE_INFO
+## how many log lines will be display in MAINTENANCE_INFO
+LIST_LOG_ENTRY="2"          
 
 
 ## some colors
