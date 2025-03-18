@@ -1,5 +1,5 @@
 # dynmotd
-Dynamic Motd (Message of the Day) an old script to print out some system-specific information.
+Dynamic Motd (Message of the Day) an old script that outputs some system-specific information.
 
 ![Example](/data/screenshot.png)
 
