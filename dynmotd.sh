@@ -89,7 +89,7 @@ function check_dependencies() {
 }
 
 ## don't start as non-root
-if [ "$(whoami)" != "root" ]; then
+if [[ "$USER" != "root" ]]; then
     cat /etc/motd 2>/dev/null || echo "No message of the day available"
     exit 0
 fi
@@ -431,7 +431,7 @@ ${F3}${STORAGE}${F1}"
 function show_user_info () {
     if [ "$USER_INFO" = "1" ]; then
         ## get my username
-        WHOIAM=$(whoami)
+        WHOIAM=$USER
 
         ## get my user id
         ID=$(id)
