@@ -30,6 +30,7 @@ New features comming soon
 | Rocky Linux 8 - 9  | Successfully tested  |
 | Raspberry Pi OS    | Successfully tested  |
 
+Tell me if you have tested it on an OS that is not on the list.
 
 Pre-Setup Debian, Raspberry PI OS and Ubuntu and all other Debian based Distributions
 -------------------------------------------------------------------------------------
