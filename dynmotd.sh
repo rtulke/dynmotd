@@ -417,7 +417,8 @@ ${F1}  Reboot Packages ${F2}= ${F3}${REBOOT_PACKAGES}${F1}"
 function show_storage_info () {
     if [ "$STORAGE_INFO" = "1" ]; then
         ## get current storage information, how much space is left
-        STORAGE=$(df -hT | sort -r -k 6 -i | sed -e 's/^File.*$/\x1b[0;37m&\x1b[1;32m/' | sed -e 's/^Datei.*$/\x1b[0;37m&\x1b[1;32m/' | grep -E -v docker)
+        STORAGE=$(df -hT | awk '!/docker/ {if ($0 ~ /^File|^Datei/) print "\033[0;37m" $0 "\033[1;32m"; else if (NR > 1) {print}}' | awk '{line[NR]=$0; size[NR]=$6} END {for (i=NR; i>=1; i--) for (j=1; j<i; j++) if (size[j] < size[j+1]) {t=line[j]; line[j]=line[j+1]; line[j+1]=t; t=size[j]; size[j]=size[j+1]; size[j+1]=t} for (i=1; i<=NR; i++) print line[i]}')
+
 
         ## display storage information
         echo -e "
