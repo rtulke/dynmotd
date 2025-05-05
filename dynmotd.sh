@@ -317,11 +317,23 @@ function show_system_info () {
         CPUMODEL=$(grep -m1 -E 'model name' /proc/cpuinfo | awk -F ': ' '{print $2}')
 
         ## get memory info - read once for all memory information
-        MEM_INFO=$(cat /proc/meminfo)
-        MEMFREE=$(echo "$(echo "$MEM_INFO" | grep -E '^MemFree:' | awk '{print $2}')/1024" | bc)
-        MEMMAX=$(echo "$(echo "$MEM_INFO" | grep -E '^MemTotal:' | awk '{print $2}')/1024" | bc)
-        SWAPFREE=$(echo "$(echo "$MEM_INFO" | grep -E '^SwapFree:' | awk '{print $2}')/1024" | bc)
-        SWAPMAX=$(echo "$(echo "$MEM_INFO" | grep -E '^SwapTotal:' | awk '{print $2}')/1024" | bc)
+        MEM_INFO=$(awk '
+            /^MemFree:/ {MEMFREE=$2/1024}
+            /^MemTotal:/ {MEMMAX=$2/1024}
+            /^SwapFree:/ {SWAPFREE=$2/1024}
+            /^SwapTotal:/ {SWAPMAX=$2/1024}
+            END {printf "%.0f %.0f %.0f %.0f", MEMFREE, MEMMAX, SWAPFREE, SWAPMAX}
+        ' /proc/meminfo)
+
+        # split values into own variables
+        read -r MEMFREE MEMMAX SWAPFREE SWAPMAX <<< "$MEM_INFO"
+
+        
+        #MEM_INFO=$(cat /proc/meminfo)
+        #MEMFREE=$(echo "$(echo "$MEM_INFO" | grep -E '^MemFree:' | awk '{print $2}')/1024" | bc)
+        #MEMMAX=$(echo "$(echo "$MEM_INFO" | grep -E '^MemTotal:' | awk '{print $2}')/1024" | bc)
+        #SWAPFREE=$(echo "$(echo "$MEM_INFO" | grep -E '^SwapFree:' | awk '{print $2}')/1024" | bc)
+        #SWAPMAX=$(echo "$(echo "$MEM_INFO" | grep -E '^SwapTotal:' | awk '{print $2}')/1024" | bc)
 
         ## get current procs
         PROCCOUNT=$(ps -Afl | grep -E -v 'ps|wc' | wc -l)
