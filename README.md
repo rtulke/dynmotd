@@ -14,9 +14,9 @@ Dynamic Motd (Message of the Day) an script that outputs some system-specific in
 * less dependencies
 
 New features comming soon
+* better Multi OS support
 * GeoIP Information
 * Weather Information 
-* better Multi OS support
 * NewsFeeder?
 
 # Tested Linux Distributions
