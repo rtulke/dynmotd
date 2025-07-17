@@ -5,7 +5,7 @@
 # Improved version with performance and portability optimizations
 
 ## version
-VERSION="dynmotd v1.11"
+VERSION="dynmotd v1.11.0"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
