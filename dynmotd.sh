@@ -602,7 +602,7 @@ function show_version_info () {
     if [ "$VERSION_INFO" = "1" ]; then
         ## display version information
         echo -e "
-${F2}=============================================================[ ${F1}$VERSION${F2} ]==
+${F2}==========================================================[ ${F1}$VERSION${F2} ]==
 ${F1}"
     fi
 }
