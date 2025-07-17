@@ -5,7 +5,7 @@
 # Improved version with performance and portability optimizations
 
 ## version
-VERSION="dynmotd v1.10"
+VERSION="dynmotd v1.11"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -158,7 +158,9 @@ function addlog () {
     fi
 
     mydate=$(date +"%b %d %H:%M:%S")
-    echo "$mydate" "$1" >> "$MAINLOG"
+    #echo "$mydate" "$1" >> "$MAINLOG"
+    printf '%s %s\n' "$mydate" "${1//[$'\n\r']/}" >> "$MAINLOG"
+
     echo "Log entry added..."
 }
 
@@ -336,7 +338,8 @@ function show_system_info () {
         #SWAPMAX=$(echo "$(echo "$MEM_INFO" | grep -E '^SwapTotal:' | awk '{print $2}')/1024" | bc)
 
         ## get current procs
-        PROCCOUNT=$(ps -Afl | grep -E -v 'ps|wc' | wc -l)
+        #PROCCOUNT=$(ps -Afl | grep -E -v 'ps|wc' | wc -l)
+        PROCCOUNT=$(ps --no-headers -eo pid | wc -l)
 
         ## get maximum usable procs
         PROCMAX=$(ulimit -u)
@@ -456,7 +459,8 @@ function show_user_info () {
         LOGGEDIN=$(who | awk '{print $1, $5}' | awk -F '[()]' '{print $1, $2}' | uniq -c | awk '{printf "(%s) %s %s,", $1, $2, $3}' | sed 's/,$//' | sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
         ## System Users with arrays
-        mapfile -t sys_users < <(grep -E '\:x\:10[0-9][0-9]' /etc/passwd | grep -E '\:\/bin\/bash|\:\/bin/sh' | awk -F ':' '{print $1}')
+        mapfile -t sys_users < <(grep -E ':x:1[0-9]{3}:' /etc/passwd | grep -E ':(bin/bash|bin/sh)$' | awk -F ':' '{print $1}')
+
         SYSTEMUSERCOUNT=${#sys_users[@]}
         SYSTEMUSER=$(IFS=", "; echo "${sys_users[*]}" | sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
@@ -521,7 +525,7 @@ function show_user_info () {
                     fi
                 done < "$homedir/.ssh/authorized_keys"
             fi
-        done < <(grep -E '\:x\:10[0-9][0-9]' /etc/passwd)
+        done < <(grep -E ':x:1[0-9]{3}:' /etc/passwd)
         
         KEYUSER=$(IFS=", "; echo "${keyusers[*]}" | sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
