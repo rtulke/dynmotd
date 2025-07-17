@@ -21,14 +21,15 @@ New features comming soon
 
 # Tested Linux Distributions
 
-| Distribution 	     | Status               |
-|--------------------|----------------------|
-| CentOS 8 - 9	     | Successfully tested  |
-| Debian 8 - 12      | Successfully tested  |
-| Ubuntu 18 - 23.10  | Successfully tested  |
-| Fedora 38 - 39     | Successfully tested  |
-| Rocky Linux 8 - 9  | Successfully tested  |
-| Raspberry Pi OS    | Successfully tested  |
+| Distribution 	      | Status               |
+|---------------------|----------------------|
+| CentOS 8 - 9	      | Successfully tested  |
+| Debian 8 - 12       | Successfully tested  |
+| Ubuntu 18 - 23.10   | Successfully tested  |
+| Fedora 38 - 39      | Successfully tested  |
+| Rocky Linux 8 - 9   | Successfully tested  |
+| Raspberry Pi OS     | Successfully tested  |
+| openSUSE tumbleweed | Successfully tested  |
 
 Tell me if you have tested it on an OS that is not on the list.
 
