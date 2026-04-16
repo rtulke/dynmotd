@@ -2,55 +2,56 @@
 
 # dynamic message of the day
 # Robert Tulke, rt@debian.sh
-# Improved version with performance and portability optimizations
+# Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.11.0"
+VERSION="dynmotd v1.12.0"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
 ENVFILE="/root/.dynmotd/environment.cfg"
+DYNMOTDDIR="/root/.dynmotd"
 
 ## install path
-DYNMOTD_INSTALL_PATH="/usr/local/bin"     # path where "dynmotd -i" is to be installed /without trailing slash
-DYNMOTD_PROFILE="/etc/profile.d/motd.sh"  # file where dynmotd should be loaded
-DYNMOTD_FILENAME="dynmotd"                # file name to be used for the installation
+DYNMOTD_INSTALL_PATH="/usr/local/bin"     # install destination (no trailing slash)
+DYNMOTD_PROFILE="/etc/profile.d/motd.sh"  # profile.d hook that loads dynmotd
+DYNMOTD_FILENAME="dynmotd"                # binary name
 
-## enable system related information about your system
-SYSTEM_INFO="1"             # show system information
-STORAGE_INFO="1"            # show storage information
-USER_INFO="1"               # show some user information
-ENVIRONMENT_INFO="1"        # show environment information
-MAINTENANCE_INFO="1"        # show maintenance information
-UPDATE_INFO="1"             # show update information
-VERSION_INFO="1"            # show the version banner
+## enable / disable information sections (1=on, 0=off)
+SYSTEM_INFO="1"             # system information
+STORAGE_INFO="1"            # storage information
+USER_INFO="1"               # user information
+ENVIRONMENT_INFO="1"        # environment information
+MAINTENANCE_INFO="1"        # maintenance log
+UPDATE_INFO="1"             # available package updates
+VERSION_INFO="1"            # version banner
 
-## how many log lines will be display in MAINTENANCE_INFO
-LIST_LOG_ENTRY="2"          
+## number of maintenance log lines shown in MAINTENANCE_INFO
+LIST_LOG_ENTRY="2"
 
 
-## some colors
-C_BLACK="\033[0;30m"        # Black
-C_DGRAY="\033[1;30m"        # Dark Grey
-C_GREY="\033[0;37m"         # Grey
-C_WHITE="\033[1;37m"        # White
-C_RED="\033[0;31m"          # Red
-C_LRED="\033[1;31m"         # Light Red
-C_BLUE="\033[0;34m"         # Blue
-C_LBLUE="\033[1;34m"        # Light Blue
-C_CYAN="\033[0;36m"         # Cyan
-C_LCYAN="\033[1;36m"        # Light Cyan
-C_PINK="\033[0;35m"         # Purple
-C_LPINK="\033[1;35m"        # Light Purple
-C_GREEN="\033[0;32m"        # Green
-C_LGREEN="\033[1;32m"       # Light Green
-C_BROWN="\033[0;33m"        # Brown/Orange
-C_YELLOW="\033[1;33m"       # Yellow
-
+## ANSI color definitions
+C_BLACK="\033[0;30m"
+C_DGRAY="\033[1;30m"
+C_GREY="\033[0;37m"
+C_WHITE="\033[1;37m"
+C_RED="\033[0;31m"
+C_LRED="\033[1;31m"
+C_BLUE="\033[0;34m"
+C_LBLUE="\033[1;34m"
+C_CYAN="\033[0;36m"
+C_LCYAN="\033[1;36m"
+C_PINK="\033[0;35m"
+C_LPINK="\033[1;35m"
+C_GREEN="\033[0;32m"
+C_LGREEN="\033[1;32m"
+C_BROWN="\033[0;33m"
+C_YELLOW="\033[1;33m"
+C_RESET="\033[0m"
 
 #### color schemes
 
-## DOT, day of the tentacle scheme
+## DOT - day of the tentacle (default)
 F1=${C_GREY}
 F2=${C_PINK}
 F3=${C_LGREEN}
@@ -69,39 +70,170 @@ F4=${C_RED}
 #F4=${C_RED}
 
 
-## Function to check dependencies
-function check_dependencies() {
-    local missing_deps=()
-    for cmd in bc grep hostname sed awk; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
-            missing_deps+=("$cmd")
-        fi
-    done
-    
-    if [ ${#missing_deps[@]} -ne 0 ]; then
-        echo "Missing dependencies found: ${missing_deps[*]}"
-        echo "Please install the missing packages:"
-        echo "Debian/Ubuntu: apt install coreutils bc procps hostname sed mawk grep bind9-host lsb-release"
-        echo "CentOS/RHEL: yum install bc bind-utils redhat-lsb-core"
-        return 1
-    fi
-    return 0
-}
-
-## don't start as non-root
-if [[ "$USER" != "root" ]]; then
+## root check — use id -u, not $USER (more reliable in su/sudo/cron contexts)
+if [[ "$(id -u)" -ne 0 ]]; then
     cat /etc/motd 2>/dev/null || echo "No message of the day available"
     exit 0
 fi
 
 
+#### Distribution Detection
 
-#### Configuration Part
+## Sets: DISTRO_ID, DISTRO_ID_LIKE, DISTRO_PRETTY
+function detect_distro() {
+    DISTRO_ID=""
+    DISTRO_ID_LIKE=""
+    DISTRO_PRETTY=""
 
-## create .maintenance file if not exist
-function createmaintenance {
+    if [ -f /etc/os-release ]; then
+        DISTRO_ID=$(grep -m1 '^ID=' /etc/os-release \
+            | cut -d= -f2 | tr -d '"' | tr '[:upper:]' '[:lower:]')
+        DISTRO_ID_LIKE=$(grep -m1 '^ID_LIKE=' /etc/os-release \
+            | cut -d= -f2 | tr -d '"' | tr '[:upper:]' '[:lower:]')
+        DISTRO_PRETTY=$(grep -m1 '^PRETTY_NAME=' /etc/os-release \
+            | cut -d= -f2 | tr -d '"')
+    elif [ -f /etc/redhat-release ]; then
+        DISTRO_ID="rhel"
+        DISTRO_PRETTY=$(< /etc/redhat-release)
+    elif [ -f /etc/debian_version ]; then
+        DISTRO_ID="debian"
+        DISTRO_PRETTY="Debian $(< /etc/debian_version)"
+    else
+        DISTRO_ID="unknown"
+        DISTRO_PRETTY="Unknown Distribution"
+    fi
+}
+
+
+#### Dependency Management
+
+function check_dependencies() {
+    local missing_deps=()
+    for cmd in grep hostname sed awk; do
+        command -v "$cmd" >/dev/null 2>&1 || missing_deps+=("$cmd")
+    done
+
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        echo "Missing dependencies: ${missing_deps[*]}"
+        echo "Run: $(basename "$0") --install  to install them automatically"
+        return 1
+    fi
+    return 0
+}
+
+
+## Detects the distribution and installs any missing dependencies
+## using the native package manager. Does NOT remove packages on uninstall.
+function install_dependencies() {
+    detect_distro
+    echo "Detected: ${DISTRO_PRETTY:-$DISTRO_ID}"
+    echo
+
+    local pkg_mgr="" update_cmd="" packages=""
+    local is_debian=false is_rhel=false is_fedora=false
+    local is_suse=false is_arch=false is_alpine=false
+
+    ## Classify by DISTRO_ID first
+    case "$DISTRO_ID" in
+        debian|ubuntu|linuxmint|raspbian|pop|elementary|zorin|\
+        kali|parrot|mx|devuan|lmde|neon|trisquel)
+            is_debian=true ;;
+        rhel|centos|rocky|almalinux|ol|scientific|eurolinux|\
+        springdale|cloudlinux|anolis)
+            is_rhel=true ;;
+        fedora)
+            is_fedora=true ;;
+        opensuse*|sles|sled|opensuse-leap|opensuse-tumbleweed)
+            is_suse=true ;;
+        arch|manjaro|endeavouros|garuda|artix|cachyos|blackarch)
+            is_arch=true ;;
+        alpine)
+            is_alpine=true ;;
+    esac
+
+    ## Fallback: use ID_LIKE for derivatives not listed above
+    if ! $is_debian && ! $is_rhel && ! $is_fedora && \
+       ! $is_suse && ! $is_arch && ! $is_alpine; then
+        [[ "$DISTRO_ID_LIKE" == *"debian"* || \
+           "$DISTRO_ID_LIKE" == *"ubuntu"* ]]          && is_debian=true
+        [[ "$DISTRO_ID_LIKE" == *"rhel"*   || \
+           "$DISTRO_ID_LIKE" == *"centos"* ]]          && is_rhel=true
+        ## fedora only if not already classified as rhel
+        [[ "$DISTRO_ID_LIKE" == *"fedora"* ]] && \
+            ! $is_rhel                                 && is_fedora=true
+        [[ "$DISTRO_ID_LIKE" == *"suse"* ]]            && is_suse=true
+        [[ "$DISTRO_ID_LIKE" == *"arch"* ]]            && is_arch=true
+    fi
+
+    ## Map family to package manager and package list
+    if $is_debian; then
+        pkg_mgr="apt-get"
+        update_cmd="apt-get update -qq"
+        packages="coreutils procps hostname sed gawk grep dnsutils lsb-release"
+    elif $is_rhel; then
+        command -v dnf >/dev/null 2>&1 && pkg_mgr="dnf" || pkg_mgr="yum"
+        packages="hostname procps-ng gawk bind-utils"
+    elif $is_fedora; then
+        pkg_mgr="dnf"
+        packages="hostname procps-ng gawk bind-utils"
+    elif $is_suse; then
+        pkg_mgr="zypper"
+        packages="hostname procps gawk bind-utils lsb-release"
+    elif $is_arch; then
+        pkg_mgr="pacman"
+        packages="inetutils procps-ng gawk bind"
+    elif $is_alpine; then
+        pkg_mgr="apk"
+        packages="bind-tools busybox-extras procps gawk"
+    else
+        echo "Unsupported distribution: '${DISTRO_ID}'"
+        echo "Install manually: grep, hostname, sed, awk, host (dnsutils / bind-utils)"
+        return 1
+    fi
+
+    ## Only install what is actually missing
+    local missing_cmds=()
+    for cmd in grep hostname sed awk host; do
+        command -v "$cmd" >/dev/null 2>&1 || missing_cmds+=("$cmd")
+    done
+
+    if [ ${#missing_cmds[@]} -eq 0 ]; then
+        echo "All dependencies are already installed."
+        return 0
+    fi
+
+    echo "Missing commands   : ${missing_cmds[*]}"
+    echo "Package manager    : ${pkg_mgr}"
+    echo "Packages to install: ${packages}"
+    echo
+
+    [ -n "$update_cmd" ] && $update_cmd
+
+    case "$pkg_mgr" in
+        apt-get) apt-get install -y $packages ;;
+        dnf)     dnf install -y $packages ;;
+        yum)     yum install -y $packages ;;
+        zypper)  zypper install -y $packages ;;
+        pacman)  pacman -Sy --noconfirm $packages ;;
+        apk)     apk add --no-cache $packages ;;
+    esac
+
+    local rc=$?
+    echo
+    if [ $rc -eq 0 ]; then
+        echo "Dependencies installed successfully."
+    else
+        echo "Warning: package installation returned exit code ${rc}."
+        echo "Please check the output above and install missing packages manually."
+    fi
+    return $rc
+}
+
+
+#### Configuration helpers
+
+function createmaintenance() {
     if [ ! -f "$MAINLOG" ]; then
-        DYNMOTDDIR=$(dirname "$MAINLOG")
         mkdir -p "$DYNMOTDDIR"
         touch "$MAINLOG"
         chmod 600 "$MAINLOG"
@@ -111,509 +243,528 @@ function createmaintenance {
 }
 
 
-## create .environment file if not exist
-function createenv {
+function createenv() {
+    ## Show current values as defaults when reconfiguring
+    local cur_func="${SYSFUNCTION:-Unset}"
+    local cur_env="${SYSENV:-DEV}"
+    local cur_sla="${SYSSLA:-None}"
+
     echo -e "
-${F2}============[ ${F1}Maintenance Setup${F2} ]==============================================
+${F2}============[ ${F1}Environment Setup${F2} ]=============================================
 ${F1}"
-    echo "We want to assign a function name for $(hostname --fqdn 2>/dev/null || hostname)"
+    echo "Assign a role and environment label for: $(hostname --fqdn 2>/dev/null || hostname)"
     echo
-    echo -n "System Function, like Webserver, Mailserver e.g. [${1:-Unset}]: "
+
+    echo -n "System Function (e.g. Webserver, Mailserver) [${cur_func}]: "
     read -r SYSFUNCTION
-    echo -n "System Environment, like DEV|TST|INT|PRD [${2:-DEV}]: "
+    echo -n "Environment (DEV|TST|INT|PRD) [${cur_env}]: "
     read -r SYSENV
-    echo -n "Service Level Agreement, like SLA1|SLA2|SLA3|None: [${3:-None}] "
+    echo -n "Service Level (SLA1|SLA2|SLA3|None) [${cur_sla}]: "
     read -r SYSSLA
-    
-    # Set default values if empty
-    SYSFUNCTION="${SYSFUNCTION:-Unset}"
-    SYSENV="${SYSENV:-DEV}"
-    SYSSLA="${SYSSLA:-None}"
-    
-    rm -rf "$ENVFILE"
-    mkdir -p "$(dirname "$ENVFILE")"
+
+    SYSFUNCTION="${SYSFUNCTION:-$cur_func}"
+    SYSENV="${SYSENV:-$cur_env}"
+    SYSSLA="${SYSSLA:-$cur_sla}"
+
+    mkdir -p "$DYNMOTDDIR"
+    rm -f "$ENVFILE"
     touch "$ENVFILE"
     chmod 600 "$ENVFILE"
-    echo "SYSENV=\"$SYSENV\"" >> "$ENVFILE"
-    echo "SYSFUNCTION=\"$SYSFUNCTION\"" >> "$ENVFILE"
-    echo "SYSSLA=\"$SYSSLA\"" >> "$ENVFILE"
+    printf 'SYSFUNCTION="%s"\n' "$SYSFUNCTION" >> "$ENVFILE"
+    printf 'SYSENV="%s"\n'      "$SYSENV"      >> "$ENVFILE"
+    printf 'SYSSLA="%s"\n'      "$SYSSLA"      >> "$ENVFILE"
+
+    echo
+    echo "Configuration saved to $ENVFILE"
 }
 
 
-#### Parameter Part
+#### Log management
 
-## addlog
-function addlog () {
+function addlog() {
     if [ ! -f "$MAINLOG" ]; then
-        echo "Maintenance logfile not found: $MAINLOG trying to create a new one..."
+        echo "Maintenance log not found — creating: $MAINLOG"
         createmaintenance
     fi
 
     if [ -z "$1" ]; then
-        echo "Usage:"
-        echo
-        echo "  ./$(basename "$0") -a \"new guest account added\" "
-        echo
+        echo "Usage: $(basename "$0") -a \"maintenance note\""
         exit 1
     fi
 
+    local mydate
     mydate=$(date +"%b %d %H:%M:%S")
-    #echo "$mydate" "$1" >> "$MAINLOG"
     printf '%s %s\n' "$mydate" "${1//[$'\n\r']/}" >> "$MAINLOG"
-
-    echo "Log entry added..."
+    echo "Log entry added."
 }
 
 
-## rmlog
-function rmlog () {
+function rmlog() {
     if [ -z "$1" ]; then
-        echo "Usage: "
-        echo
-        echo "  ./$(basename "$0") -d [line-number] "
-        echo
+        echo "Usage: $(basename "$0") -d [line-number]"
         exit 1
     fi
 
-    re='^[0-9]+$'
-    if ! [[ $1 =~ $re ]] ; then
-        echo "$1 : not a number"
+    if ! [[ "$1" =~ ^[0-9]+$ ]]; then
+        echo "Error: '$1' is not a valid line number."
         exit 1
     fi
 
-    ## remove specific line
-    sed -i "$1"'d' "$MAINLOG"
-    RC=$?
-    if [ $RC = "0" ]; then
-        echo "Line $1 successfully deleted..."
-    else
-        echo "Something went wrong"
-        exit 1
-    fi
+    sed -i "${1}d" "$MAINLOG"
+    local rc=$?
+    [ $rc -eq 0 ] && echo "Line $1 deleted." || { echo "Error deleting line $1."; exit $rc; }
 }
 
 
-## listlog
-function listlog () {
+function listlog() {
     if [ ! -f "$MAINLOG" ]; then
-        echo "Maintenance logfile not found: $MAINLOG"
+        echo "Maintenance log not found: $MAINLOG"
         createmaintenance
         return
     fi
 
-    COUNT=1
+    local count=1
     while read -r line; do
-        NAME=$line;
-        echo -e "${F2}$COUNT ${F1}$NAME${F2}"
-        COUNT=$((COUNT+1))
+        echo -e "${F2}${count} ${F1}${line}${F2}"
+        (( count++ ))
     done < "$MAINLOG"
 }
 
-#### install itself
-function install () {
-    # Check dependencies before installation
+
+#### Install / Uninstall
+
+function install() {
+    echo -e "${F2}============[ ${F1}Installing dynmotd${F2} ]===========================================${F1}"
+    echo
+
+    ## Install missing system packages for this distribution
+    install_dependencies
+    echo
+
+    ## Verify core tools are present after installation
     check_dependencies || {
-        echo "Please install the missing dependencies and try again."
+        echo "Dependency check failed. Please resolve missing packages and retry."
         return 1
     }
 
-    # if dynmotd does not exist then install it
-    if [ ! -f "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}" ]; then
-        echo -n "Installing dynmotd... "
-        cat "$0" > "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
-        chmod ugo+rx "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
-        echo "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}" > "$DYNMOTD_PROFILE"
-        echo "done."
-    else
-        echo -n "It seems like dynmotd is already installed, should I overwrite it? [Y|n]: "
-        read -r OPT
+    local target="${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
 
-        if [[ "$OPT" == "Y" || "$OPT" == "y" || "$OPT" == "" ]]; then
-            echo -n "Installing dynmotd... "
-            cat "$0" > "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
-            chmod ugo+rx "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
-            echo "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}" > "$DYNMOTD_PROFILE"
-            echo "done."
-        else
-            echo "Nothing to do..."
-        fi
+    if [ -f "$target" ]; then
+        echo -n "dynmotd is already installed at ${target}. Overwrite? [Y/n]: "
+        read -r OPT
+        [[ "$OPT" =~ ^[Nn]$ ]] && { echo "Nothing to do."; return 0; }
     fi
+
+    echo -n "Installing to ${target}... "
+    cat "$0" > "$target"
+    chmod 755 "$target"
+    echo "$target" > "$DYNMOTD_PROFILE"
+    echo "done."
+
+    ## Run first-time setup if needed
+    [ ! -f "$ENVFILE" ]  && { echo; createenv; }
+    [ ! -f "$MAINLOG" ]  && createmaintenance
+
+    echo
+    echo "Installation complete."
+    echo "Log out and back in (or: sudo -i) to see dynmotd on next login."
 }
 
-#### uninstall itself
-function uninstall () {
-    echo "Should the following files be deleted?"
+
+function uninstall() {
+    local target="${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
+
+    echo -e "${F2}============[ ${F1}Uninstalling dynmotd${F2} ]=========================================${F1}"
     echo
-    for rmfile in "$DYNMOTD_PROFILE" "${MAINLOG}" "${ENVFILE}" "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"; do
-        if [ -f "$rmfile" ]; then
-            echo "$rmfile"
-        fi
+
+    ## Collect program files that exist
+    local remove_files=()
+    [ -f "$target" ]          && remove_files+=("$target")
+    [ -f "$DYNMOTD_PROFILE" ] && remove_files+=("$DYNMOTD_PROFILE")
+
+    if [ ${#remove_files[@]} -eq 0 ] && [ ! -d "$DYNMOTDDIR" ]; then
+        echo "dynmotd does not appear to be installed. Nothing to do."
+        return 0
+    fi
+
+    if [ ${#remove_files[@]} -gt 0 ]; then
+        echo "Program files to remove:"
+        for f in "${remove_files[@]}"; do
+            echo "  $f"
+        done
+    fi
+
+    ## Ask separately about data / logs
+    local remove_data=false
+    if [ -d "$DYNMOTDDIR" ]; then
+        echo
+        echo "Data directory: ${DYNMOTDDIR}/"
+        [ -f "$MAINLOG" ] && echo "  maintenance.log  ($(wc -l < "$MAINLOG") entries)"
+        [ -f "$ENVFILE" ]  && echo "  environment.cfg"
+        echo
+        echo -n "Also delete logs and configuration in ${DYNMOTDDIR}/? [y/N]: "
+        read -r OPT_DATA
+        [[ "$OPT_DATA" =~ ^[Yy]$ ]] && remove_data=true
+    fi
+
+    echo
+    echo -n "Confirm removal [Y/n]: "
+    read -r OPT
+    echo
+
+    ## Default is YES (empty = confirm)
+    if [[ "$OPT" =~ ^[Nn]$ ]]; then
+        echo "Aborted. Nothing removed."
+        return 0
+    fi
+
+    ## Remove binary and profile hook
+    for f in "${remove_files[@]}"; do
+        rm -f "$f" \
+            && echo "Removed: $f" \
+            || echo "Error: could not remove $f"
     done
 
-    echo
-    echo -n "Please confirm with [Y|n]: "
-    read -r OPT 
-    echo
-
-    if [[ "$OPT" == "Y" || "$OPT" == "y" || "$OPT" == "" ]]; then
-        for rmfile in "$DYNMOTD_PROFILE" "${MAINLOG}" "${ENVFILE}" "${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"; do
-            if [ -f "$rmfile" ]; then
-                rm -f "$rmfile"
-                rc=$?
-                if [ "$rc" -eq 0 ]; then
-                    echo "$rmfile successfully removed"
-                else
-                    echo "Error: $rmfile cannot be removed!"
-                    echo "exit $rc"
-                fi
-            fi
-        done
+    ## Remove data directory only if explicitly confirmed
+    if $remove_data; then
+        rm -rf "$DYNMOTDDIR" \
+            && echo "Removed: ${DYNMOTDDIR}/" \
+            || echo "Error: could not remove ${DYNMOTDDIR}/"
     else
-        echo "Nothing to do..."
+        echo
+        [ -d "$DYNMOTDDIR" ] && echo "Data preserved: ${DYNMOTDDIR}/"
+        echo "(Remove manually if desired: rm -rf ${DYNMOTDDIR}/)"
     fi
+
+    echo
+    echo "Note: System packages installed as dependencies were NOT removed."
+    echo "      Use your package manager to remove them if desired."
+    echo
+    echo "dynmotd uninstalled."
 }
 
 
+#### Output sections
 
-#### Output Part
+function show_system_info() {
+    [ "$SYSTEM_INFO" = "1" ] || return
 
-## System Info
-function show_system_info () {
-    if [ "$SYSTEM_INFO" = "1" ]; then
-        ## get my fqdn hostname.domain.name.tld
-        HOSTNAME=$(hostname --fqdn 2>/dev/null || hostname)
+    local HOSTNAME IP UNAME DISTRIBUTION PLATFORM UPTIME
+    local CPUS CPUMODEL MEMFREE MEMMAX SWAPFREE SWAPMAX PROCCOUNT PROCMAX
 
-        ## get my main ip - improved with fallback
-        IP=$(host "$HOSTNAME" 2>/dev/null | grep "has address" | head -n1 | awk '{print $4}')
-        if [ -z "$IP" ]; then
-            IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-            [ -z "$IP" ] && IP="Unknown"
-        fi
+    HOSTNAME=$(hostname --fqdn 2>/dev/null || hostname)
 
-        ## get current kernel version
-        UNAME=$(uname -r)
+    ## IP: DNS lookup first, fallback to first interface address
+    IP=$(host "$HOSTNAME" 2>/dev/null | awk '/has address/{print $4; exit}')
+    [ -z "$IP" ] && IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    [ -z "$IP" ] && IP="Unknown"
 
-        ## get running distribution name with fallback options
-        if command -v lsb_release >/dev/null 2>&1; then
-            DISTRIBUTION=$(lsb_release -s -d)
-        else
-            if [ -f /etc/os-release ]; then
-                DISTRIBUTION=$(grep -m1 PRETTY_NAME /etc/os-release | cut -d '=' -f 2 | tr -d '"')
-            elif [ -f /etc/redhat-release ]; then
-                DISTRIBUTION=$(cat /etc/redhat-release)
-            else
-                DISTRIBUTION="Unknown Distribution"
-            fi
-        fi
+    UNAME=$(uname -r)
 
-        ## get hardware platform
-        PLATFORM=$(uname -m)
+    ## Distribution: lsb_release → /etc/os-release → /etc/redhat-release
+    if command -v lsb_release >/dev/null 2>&1; then
+        DISTRIBUTION=$(lsb_release -s -d)
+    elif [ -f /etc/os-release ]; then
+        DISTRIBUTION=$(grep -m1 'PRETTY_NAME' /etc/os-release | cut -d= -f2 | tr -d '"')
+    elif [ -f /etc/redhat-release ]; then
+        DISTRIBUTION=$(< /etc/redhat-release)
+    else
+        DISTRIBUTION="Unknown Distribution"
+    fi
 
-        ## get system uptime
-        UPTIME=$(uptime | cut -c2- | cut -d, -f1)
+    PLATFORM=$(uname -m)
 
-        ## get amount of cpu processors
-        CPUS=$(grep -c processor /proc/cpuinfo)
+    ## uptime -p (procps >= 3.3.0) gives clean "up X days, Y hours" output
+    UPTIME=$(uptime -p 2>/dev/null) \
+        || UPTIME=$(uptime | awk -F'up ' '{print $2}' | cut -d, -f1,2 | xargs)
 
-        ## get system cpu model
-        CPUMODEL=$(grep -m1 -E 'model name' /proc/cpuinfo | awk -F ': ' '{print $2}')
+    CPUS=$(grep -c processor /proc/cpuinfo)
+    CPUMODEL=$(grep -m1 'model name' /proc/cpuinfo | awk -F': ' '{print $2}')
 
-        ## get memory info - read once for all memory information
-        MEM_INFO=$(awk '
-            /^MemFree:/ {MEMFREE=$2/1024}
-            /^MemTotal:/ {MEMMAX=$2/1024}
-            /^SwapFree:/ {SWAPFREE=$2/1024}
-            /^SwapTotal:/ {SWAPMAX=$2/1024}
-            END {printf "%.0f %.0f %.0f %.0f", MEMFREE, MEMMAX, SWAPFREE, SWAPMAX}
-        ' /proc/meminfo)
+    ## Read /proc/meminfo once via awk — avoids multiple greps and bc
+    read -r MEMFREE MEMMAX SWAPFREE SWAPMAX <<< "$(awk '
+        /^MemFree:/   { f=$2/1024 }
+        /^MemTotal:/  { t=$2/1024 }
+        /^SwapFree:/  { sf=$2/1024 }
+        /^SwapTotal:/ { st=$2/1024 }
+        END { printf "%.0f %.0f %.0f %.0f", f, t, sf, st }
+    ' /proc/meminfo)"
 
-        # split values into own variables
-        read -r MEMFREE MEMMAX SWAPFREE SWAPMAX <<< "$MEM_INFO"
+    ## ps --no-headers is GNU/procps; fall back for minimal systems
+    PROCCOUNT=$(ps --no-headers -eo pid 2>/dev/null | wc -l \
+                || ps -e | tail -n +2 | wc -l)
+    PROCMAX=$(ulimit -u)
 
-        
-        #MEM_INFO=$(cat /proc/meminfo)
-        #MEMFREE=$(echo "$(echo "$MEM_INFO" | grep -E '^MemFree:' | awk '{print $2}')/1024" | bc)
-        #MEMMAX=$(echo "$(echo "$MEM_INFO" | grep -E '^MemTotal:' | awk '{print $2}')/1024" | bc)
-        #SWAPFREE=$(echo "$(echo "$MEM_INFO" | grep -E '^SwapFree:' | awk '{print $2}')/1024" | bc)
-        #SWAPMAX=$(echo "$(echo "$MEM_INFO" | grep -E '^SwapTotal:' | awk '{print $2}')/1024" | bc)
-
-        ## get current procs
-        #PROCCOUNT=$(ps -Afl | grep -E -v 'ps|wc' | wc -l)
-        PROCCOUNT=$(ps --no-headers -eo pid | wc -l)
-
-        ## get maximum usable procs
-        PROCMAX=$(ulimit -u)
-
-        ## display system information
-        echo -e "
+    echo -e "
 ${F2}============[ ${F1}System Info${F2} ]====================================================
-${F1}        Hostname ${F2}= ${F3}$HOSTNAME
-${F1}         Address ${F2}= ${F3}$IP
-${F1}          Kernel ${F2}= ${F3}$UNAME
-${F1}    Distribution ${F2}= ${F3}$DISTRIBUTION ${PLATFORM}
-${F1}          Uptime ${F2}= ${F3}$UPTIME
-${F1}             CPU ${F2}= ${F3}$CPUS x $CPUMODEL
-${F1}          Memory ${F2}= ${F3}$MEMFREE MB Free of $MEMMAX MB Total
-${F1}     Swap Memory ${F2}= ${F3}$SWAPFREE MB Free of $SWAPMAX MB Total
-${F1}       Processes ${F2}= ${F3}$PROCCOUNT of $PROCMAX MAX${F1}"
-    fi
+${F1}        Hostname ${F2}= ${F3}${HOSTNAME}
+${F1}         Address ${F2}= ${F3}${IP}
+${F1}          Kernel ${F2}= ${F3}${UNAME}
+${F1}    Distribution ${F2}= ${F3}${DISTRIBUTION} ${PLATFORM}
+${F1}          Uptime ${F2}= ${F3}${UPTIME}
+${F1}             CPU ${F2}= ${F3}${CPUS} x ${CPUMODEL}
+${F1}          Memory ${F2}= ${F3}${MEMFREE} MB Free of ${MEMMAX} MB Total
+${F1}     Swap Memory ${F2}= ${F3}${SWAPFREE} MB Free of ${SWAPMAX} MB Total
+${F1}       Processes ${F2}= ${F3}${PROCCOUNT} of ${PROCMAX} MAX${F1}"
 }
 
 
-## Update Information with support for different package managers
-function show_update_info () {
-    if [ "$UPDATE_INFO" = "1" ]; then
-        UPDATES="Unknown"
-        REBOOT_REQUIRED="Unknown"
-        REBOOT_PACKAGES="Unknown"
+function show_update_info() {
+    [ "$UPDATE_INFO" = "1" ] || return
 
-        # Check for different package managers
-        if command -v apt-get >/dev/null 2>&1; then
-            UPDATES=$(apt-get -s dist-upgrade 2>/dev/null | grep -E "upgraded" | grep -E "newly installed" | awk '{print $1}')
-            if [ -f /var/run/reboot-required ]; then
-                REBOOT_REQUIRED="Yes"
-                # Format REBOOT_PACKAGES with line breaks at >80 characters and 20 characters indentation
-                if [ -f /var/run/reboot-required.pkgs ]; then
-                    raw_packages=$(cat /var/run/reboot-required.pkgs 2>/dev/null || echo "0")
-                    # Format the output: max. 80 characters per line, then break with 20 spaces indentation
-                    formatted_packages=""
-                    line_length=0
-                    
-                    for pkg in $raw_packages; do
-                        pkg_length=${#pkg}
-                        
-                        if [ $line_length -eq 0 ]; then
-                            # First line or after line break
-                            formatted_packages+="$pkg"
-                            line_length=$pkg_length
-                        elif [ $((line_length + pkg_length + 1)) -le 80 ]; then
-                            # Enough space in current line
-                            formatted_packages+=" $pkg"
-                            line_length=$((line_length + pkg_length + 1))
-                        else
-                            # Line break at >80 characters
-                            formatted_packages+="\n                    $pkg"
-                            line_length=$((pkg_length + 20))
-                        fi
-                    done
-                    
-                    REBOOT_PACKAGES="$formatted_packages"
-                else
-                    REBOOT_PACKAGES="0"
-                fi
+    local UPDATES="Unknown"
+    local REBOOT_REQUIRED="Unknown"
+    local REBOOT_PACKAGES="N/A"
+
+    if command -v apt-get >/dev/null 2>&1; then
+        ## Count "Inst" lines from apt simulate — each = one package to upgrade
+        UPDATES=$(apt-get -s -qq dist-upgrade 2>/dev/null | grep -c '^Inst' || echo "0")
+
+        if [ -f /var/run/reboot-required ]; then
+            REBOOT_REQUIRED="Yes"
+            if [ -f /var/run/reboot-required.pkgs ]; then
+                local raw_packages formatted_packages="" line_length=0
+                raw_packages=$(< /var/run/reboot-required.pkgs)
+                for pkg in $raw_packages; do
+                    local pkg_length=${#pkg}
+                    if [ $line_length -eq 0 ]; then
+                        formatted_packages+="$pkg"
+                        line_length=$pkg_length
+                    elif [ $((line_length + pkg_length + 1)) -le 80 ]; then
+                        formatted_packages+=" $pkg"
+                        line_length=$((line_length + pkg_length + 1))
+                    else
+                        formatted_packages+="\n                    $pkg"
+                        line_length=$((pkg_length + 20))
+                    fi
+                done
+                REBOOT_PACKAGES="$formatted_packages"
             else
-                REBOOT_REQUIRED="No"
-                REBOOT_PACKAGES="0"
+                REBOOT_PACKAGES="(unknown)"
             fi
-        elif command -v dnf >/dev/null 2>&1; then
-            UPDATES=$(dnf check-update --quiet 2>/dev/null | grep -v "^$" | wc -l)
-            REBOOT_REQUIRED="Unknown"
-            REBOOT_PACKAGES="N/A"
-        elif command -v yum >/dev/null 2>&1; then
-            UPDATES=$(yum check-update --quiet 2>/dev/null | grep -v "^$" | wc -l)
-            REBOOT_REQUIRED="Unknown"
-            REBOOT_PACKAGES="N/A"
-        elif command -v zypper >/dev/null 2>&1; then
-            UPDATES=$(zypper list-updates 2>/dev/null | grep -v "^$" | wc -l)
-            REBOOT_REQUIRED="Unknown"
-            REBOOT_PACKAGES="N/A"
+        else
+            REBOOT_REQUIRED="No"
+            REBOOT_PACKAGES="-"
         fi
 
-        # Display update information
-        echo -e "
-${F2}============[ ${F1}Update Info${F2} ]====================================================
-${F1}Available Updates ${F2}= ${F3}${UPDATES}${F1}
-${F1}  Reboot Required ${F2}= ${F3}${REBOOT_REQUIRED}${F1}
-${F1}  Reboot Packages ${F2}= ${F3}${REBOOT_PACKAGES}${F1}"
+    elif command -v dnf >/dev/null 2>&1; then
+        ## Filter out dnf header/metadata lines; count only actual package lines
+        UPDATES=$(dnf check-update -q 2>/dev/null \
+            | awk '/^[A-Za-z0-9]/ && !/^Last|^Loaded|^Loading|^Updated/ {c++} END {print c+0}')
+        ## needs-restarting -r exits 1 if reboot needed
+        if command -v needs-restarting >/dev/null 2>&1; then
+            needs-restarting -r >/dev/null 2>&1 \
+                && REBOOT_REQUIRED="No" || REBOOT_REQUIRED="Yes"
+        else
+            REBOOT_REQUIRED=$([ -f /var/run/reboot-required ] && echo "Yes" || echo "No")
+        fi
+
+    elif command -v yum >/dev/null 2>&1; then
+        UPDATES=$(yum check-update -q 2>/dev/null \
+            | awk '/^[A-Za-z0-9]/ && !/^Last|^Loaded|^Loading|^Updated/ {c++} END {print c+0}')
+        REBOOT_REQUIRED="Unknown"
+
+    elif command -v zypper >/dev/null 2>&1; then
+        ## zypper list-updates: count lines starting with "|" (table rows)
+        UPDATES=$(zypper list-updates 2>/dev/null | grep -c '^|' || echo "0")
+        zypper needs-rebooting >/dev/null 2>&1 \
+            && REBOOT_REQUIRED="No" || REBOOT_REQUIRED="Yes"
+
+    elif command -v pacman >/dev/null 2>&1; then
+        UPDATES=$(pacman -Qu 2>/dev/null | wc -l)
+        REBOOT_REQUIRED="Unknown"
     fi
+
+    echo -e "
+${F2}============[ ${F1}Update Info${F2} ]====================================================
+${F1}Available Updates ${F2}= ${F3}${UPDATES}
+${F1}  Reboot Required ${F2}= ${F3}${REBOOT_REQUIRED}
+${F1}  Reboot Packages ${F2}= ${F3}${REBOOT_PACKAGES}${F1}"
 }
 
-## Storage Informations
-function show_storage_info () {
-    if [ "$STORAGE_INFO" = "1" ]; then
-        ## get current storage information, how much space is left
-        STORAGE=$(df -hT | awk '!/docker/ {if ($0 ~ /^File|^Datei/) print "\033[0;37m" $0 "\033[1;32m"; else if (NR > 1) {print}}' | awk '{line[NR]=$0; size[NR]=$6} END {for (i=NR; i>=1; i--) for (j=1; j<i; j++) if (size[j] < size[j+1]) {t=line[j]; line[j]=line[j+1]; line[j+1]=t; t=size[j]; size[j]=size[j+1]; size[j+1]=t} for (i=1; i<=NR; i++) print line[i]}')
 
+function show_storage_info() {
+    [ "$STORAGE_INFO" = "1" ] || return
 
-        ## display storage information
-        echo -e "
+    ## Exclude virtual/overlay filesystems; sort by usage (descending)
+    local STORAGE
+    STORAGE=$(df -hT 2>/dev/null | awk '
+        !/docker|tmpfs|devtmpfs|squashfs|udev|overlay|shm|cgroupfs/ {
+            if ($0 ~ /^File|^Datei/) print "\033[0;37m" $0 "\033[1;32m"
+            else if (NR > 1) print
+        }
+    ' | awk '{
+        line[NR]=$0; size[NR]=$6
+    } END {
+        for (i=NR; i>=1; i--)
+            for (j=1; j<i; j++)
+                if (size[j] < size[j+1]) {
+                    t=line[j]; line[j]=line[j+1]; line[j+1]=t
+                    t=size[j]; size[j]=size[j+1]; size[j+1]=t
+                }
+        for (i=1; i<=NR; i++) print line[i]
+    }')
+
+    echo -e "
 ${F2}============[ ${F1}Storage Info${F2} ]===================================================
 ${F3}${STORAGE}${F1}"
+}
+
+
+## Extract the comment field from an authorized_keys line.
+## Uses read -ra to avoid a subshell+pipe per key.
+## Supports: ssh-rsa, ssh-ed25519, ecdsa-sha2-*, sk-ssh-*, sk-ecdsa-*
+function _ssh_key_comment() {
+    local -a fields
+    read -ra fields <<< "$1"
+    local count=${#fields[@]}
+
+    if [ "$count" -gt 2 ]; then
+        local comment="${fields[$((count-1))]}"
+        ## Last field is still a key type or base64 blob → no comment present
+        if [[ "$comment" =~ ^(ssh-|ecdsa-|sk-|AAAA|BBBB) ]]; then
+            echo "- Unknown -"
+        else
+            echo "$comment"
+        fi
+    else
+        echo "- Unknown -"
     fi
 }
 
 
-## User Informations - with optimized SSH-Key-Handling
-function show_user_info () {
-    if [ "$USER_INFO" = "1" ]; then
-        ## get my username
-        WHOIAM=$USER
+function show_user_info() {
+    [ "$USER_INFO" = "1" ] || return
 
-        ## get my user id
-        ID=$(id)
+    local WHOIAM ID SESSIONS LOGGEDIN
+    local SYSTEMUSERCOUNT SYSTEMUSER
+    local SUPERUSERCOUNT SUPERUSER
+    local KEYUSERCOUNT=0
 
-        ## how many users are logged in
-        SESSIONS=$(who | wc -l)
+    WHOIAM=$USER
+    ID=$(id)
+    SESSIONS=$(who | wc -l)
 
-        ## get a list of all logged in users - optimized
-        LOGGEDIN=$(who | awk '{print $1, $5}' | awk -F '[()]' '{print $1, $2}' | uniq -c | awk '{printf "(%s) %s %s,", $1, $2, $3}' | sed 's/,$//' | sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+    LOGGEDIN=$(who | awk '{print $1, $5}' | awk -F'[()]' '{print $1, $2}' | uniq -c \
+        | awk '{printf "(%s) %s %s,", $1, $2, $3}' | sed 's/,$//' \
+        | sed 's/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
-        ## System Users with arrays
-        mapfile -t sys_users < <(grep -E ':x:1[0-9]{3}:' /etc/passwd | grep -E ':(bin/bash|bin/sh)$' | awk -F ':' '{print $1}')
+    ## System users: UID 1000–65533, interactive shell only
+    mapfile -t sys_users < <(
+        awk -F: '$3 >= 1000 && $3 < 65534 && ($7 ~ /bash$|sh$/) {print $1}' /etc/passwd
+    )
+    SYSTEMUSERCOUNT=${#sys_users[@]}
+    SYSTEMUSER=$(IFS=", "; echo "${sys_users[*]}" \
+        | sed 's/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
-        SYSTEMUSERCOUNT=${#sys_users[@]}
-        SYSTEMUSER=$(IFS=", "; echo "${sys_users[*]}" | sed '1,$s/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+    ## SSH keys authorized for root
+    if [ -f "/root/.ssh/authorized_keys" ]; then
+        mapfile -t ssh_root_users < <(
+            while read -r line; do
+                [[ "$line" =~ ^(ssh-|ecdsa-sha2-|sk-ssh-|sk-ecdsa-) ]] \
+                    && _ssh_key_comment "$line"
+            done < /root/.ssh/authorized_keys
+        )
+        SUPERUSERCOUNT=${#ssh_root_users[@]}
+        SUPERUSER=$(IFS=", "; echo "${ssh_root_users[*]}" \
+            | sed 's/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+    else
+        SUPERUSERCOUNT=0
+        SUPERUSER="None"
+    fi
 
-        ## Optimized SSH-Key display - Only show comments behind SSH Keys
-        if [ -f "/root/.ssh/authorized_keys" ]; then
-            # Array for SSH key users
-            mapfile -t ssh_root_users < <(while read -r line; do
-                if [[ "$line" =~ ^ssh- ]]; then
-                    # Check if the key has more than two fields (ssh-rsa AAAA... [comment])
-                    # Count fields in string
-                    field_count=$(echo "$line" | wc -w)
-                    
-                    if [ "$field_count" -gt 2 ]; then
-                        # If there are more than 2 fields, take the last one as comment
-                        comment=$(echo "$line" | awk '{print $NF}')
-                        
-                        # Check if the last part is actually a comment and not part of the key
-                        if [[ "$comment" == ssh-* || "$comment" == AAAA* ]]; then
-                            echo "- Unknown -"
-                        else
-                            echo "$comment"
-                        fi
-                    else
-                        # If only 2 fields (ssh-rsa and the key), then no comment present
-                        echo "- Unknown -"
-                    fi
-                fi
-            done < /root/.ssh/authorized_keys)
-            
-            SUPERUSERCOUNT=${#ssh_root_users[@]}
-            SUPERUSER=$(IFS=", "; echo "${ssh_root_users[*]}" | sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
-        else
-            SUPERUSERCOUNT=0
-            SUPERUSER="None"
-        fi
-
-        ## SSH-Keys of regular users - improved comment detection
-        KEYUSERCOUNT=0
-        keyusers=()
-        while IFS=: read -r _ _ _ _ _ homedir _; do
-            if [ -d "$homedir/.ssh" ] && [ -f "$homedir/.ssh/authorized_keys" ]; then
-                while read -r line; do
-                    if [[ "$line" =~ ^ssh- ]]; then
-                        # Check if the key has more than two fields
-                        field_count=$(echo "$line" | wc -w)
-                        
-                        if [ "$field_count" -gt 2 ]; then
-                            # If there are more than 2 fields, take the last one as comment
-                            comment=$(echo "$line" | awk '{print $NF}')
-                            
-                            # Check if the last part is actually a comment and not part of the key
-                            if [[ "$comment" == ssh-* || "$comment" == AAAA* ]]; then
-                                keyusers+=("- Unknown -")
-                            else
-                                keyusers+=("$comment")
-                            fi
-                        else
-                            # If only 2 fields (ssh-rsa and the key), then no comment present
-                            keyusers+=("- Unknown -")
-                        fi
-                        ((KEYUSERCOUNT++))
-                    fi
-                done < "$homedir/.ssh/authorized_keys"
+    ## SSH keys for regular users (UID 1000–65533)
+    local keyusers=()
+    while IFS=: read -r _ _ uid _ _ homedir _; do
+        [[ "$uid" =~ ^[0-9]+$ ]] || continue
+        (( uid < 1000 || uid >= 65534 )) && continue
+        [ -f "$homedir/.ssh/authorized_keys" ] || continue
+        while read -r line; do
+            if [[ "$line" =~ ^(ssh-|ecdsa-sha2-|sk-ssh-|sk-ecdsa-) ]]; then
+                keyusers+=("$(_ssh_key_comment "$line")")
+                (( KEYUSERCOUNT++ ))
             fi
-        done < <(grep -E ':x:1[0-9]{3}:' /etc/passwd)
-        
-        KEYUSER=$(IFS=", "; echo "${keyusers[*]}" | sed '1,$s/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+        done < "$homedir/.ssh/authorized_keys"
+    done < /etc/passwd
 
-        ## show user information
-        echo -e "
+    local KEYUSER
+    KEYUSER=$(IFS=", "; echo "${keyusers[*]}" \
+        | sed 's/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+
+    echo -e "
 ${F2}============[ ${F1}User Data${F2} ]======================================================
-${F1}    Your Username ${F2}= ${F3}$WHOIAM
-${F1}  Your Privileges ${F2}= ${F3}$ID
-${F1} Current Sessions ${F2}= ${F3}[$SESSIONS] $LOGGEDIN
-${F1}      SystemUsers ${F2}= ${F3}[$SYSTEMUSERCOUNT] $SYSTEMUSER
-${F1}  SshKeyRootUsers ${F2}= ${F3}[$SUPERUSERCOUNT] $SUPERUSER
-${F1}      SshKeyUsers ${F2}= ${F3}[$KEYUSERCOUNT] $KEYUSER${F1}"
-    fi
+${F1}    Your Username ${F2}= ${F3}${WHOIAM}
+${F1}  Your Privileges ${F2}= ${F3}${ID}
+${F1} Current Sessions ${F2}= ${F3}[${SESSIONS}] ${LOGGEDIN}
+${F1}      SystemUsers ${F2}= ${F3}[${SYSTEMUSERCOUNT}] ${SYSTEMUSER}
+${F1}  SshKeyRootUsers ${F2}= ${F3}[${SUPERUSERCOUNT}] ${SUPERUSER}
+${F1}      SshKeyUsers ${F2}= ${F3}[${KEYUSERCOUNT}] ${KEYUSER}${F1}"
 }
 
 
-## Environment Informations
-function show_environment_info () {
-    if [ "$ENVIRONMENT_INFO" = "1" ]; then
-        ## environment file check
-        if [ ! -f "$ENVFILE" ]; then
-            createenv
-            return
-        fi
+function show_environment_info() {
+    [ "$ENVIRONMENT_INFO" = "1" ] || return
 
-        ## include sys environment variables safer
-        if [ -f "$ENVFILE" ]; then
-            source "$ENVFILE"
-        else
-            echo "Environment file missing: $ENVFILE"
-            return
-        fi
+    if [ ! -f "$ENVFILE" ]; then
+        createenv
+        return
+    fi
 
-        ## test environment.cfg variables, if any of them are empty or damaged
-        if [ -z "${SYSFUNCTION}" ] || [ -z "${SYSENV}" ] || [ -z "${SYSSLA}" ]; then
-            rm -f "$ENVFILE"
-            createenv  # variables exist but are empty, create new
-            return
-        fi
+    ## Safety: only source the file if root owns it
+    local file_owner
+    file_owner=$(stat -c '%U' "$ENVFILE" 2>/dev/null)
+    if [ "$file_owner" != "root" ]; then
+        echo "Warning: $ENVFILE is not owned by root — skipping."
+        return 1
+    fi
 
-        ## display environment information
-        echo -e "
+    # shellcheck source=/dev/null
+    source "$ENVFILE"
+
+    if [ -z "${SYSFUNCTION}" ] || [ -z "${SYSENV}" ] || [ -z "${SYSSLA}" ]; then
+        rm -f "$ENVFILE"
+        createenv
+        return
+    fi
+
+    echo -e "
 ${F2}============[ ${F1}Environment Data${F2} ]===============================================
-${F1}         Function ${F2}= ${F3}$SYSFUNCTION
-${F1}      Environment ${F2}= ${F3}$SYSENV
-${F1}    Service Level ${F2}= ${F3}$SYSSLA${F1}"
-    fi
+${F1}         Function ${F2}= ${F3}${SYSFUNCTION}
+${F1}      Environment ${F2}= ${F3}${SYSENV}
+${F1}    Service Level ${F2}= ${F3}${SYSSLA}${F1}"
 }
 
 
-## Maintenance Information
-function show_maintenance_info () {
-    if [ "$MAINTENANCE_INFO" = "1" ]; then
-        if [ ! -f "$MAINLOG" ]; then
-            echo -e "
-${F2}============[ ${F1}Maintenance Information${F2} ]========================================
-${F4}No maintenance log found at $MAINLOG${F1}"
-            return
-        fi
+function show_maintenance_info() {
+    [ "$MAINTENANCE_INFO" = "1" ] || return
 
-        ## get latest maintenance information
-        MAINTENANCE=$(listlog | head -n"${LIST_LOG_ENTRY}")
-
-        ## display maintenance information
+    if [ ! -f "$MAINLOG" ]; then
         echo -e "
 ${F2}============[ ${F1}Maintenance Information${F2} ]========================================
-${F4}$MAINTENANCE${F1}"
+${F4}No maintenance log found at ${MAINLOG}${F1}"
+        return
     fi
+
+    local MAINTENANCE
+    MAINTENANCE=$(listlog | head -n "${LIST_LOG_ENTRY}")
+
+    echo -e "
+${F2}============[ ${F1}Maintenance Information${F2} ]========================================
+${F4}${MAINTENANCE}${F1}"
 }
 
 
-## Version Information
-function show_version_info () {
-    if [ "$VERSION_INFO" = "1" ]; then
-        ## display version information
-        echo -e "
-${F2}==========================================================[ ${F1}$VERSION${F2} ]==
+function show_version_info() {
+    [ "$VERSION_INFO" = "1" ] || return
+    echo -e "
+${F2}==========================================================[ ${F1}${VERSION}${F2} ]==
 ${F1}"
-    fi
 }
 
 
-## Display Output
-function show_info () {
-    # Check dependencies before display
-    check_dependencies || {
-        echo "Please install the missing dependencies for full functionality."
-    }
+function show_info() {
+    check_dependencies \
+        || echo "Warning: some dependencies are missing — output may be incomplete."
 
     show_system_info
     show_storage_info
@@ -625,61 +776,52 @@ function show_info () {
 }
 
 
-#### Main Part
+#### Main dispatcher
 
-## if no parameter is passed then start show_info
 if [ -z "$1" ]; then
     show_info
     exit 0
 fi
 
-
-## Parameter processing
 case "$1" in
-    addlog|-a|--addlog)
+    -a|addlog|--addlog)
         addlog "$2"
     ;;
-
-    rmlog|-d|--rmlog)
+    -d|rmlog|--rmlog)
         rmlog "$2"
     ;;
-
-    log|--log|-l|--listlog|listlog)
+    -l|log|--log|listlog|--listlog)
         listlog
     ;;
-
-    config|-c|--config|setup|-s|--set)
+    -c|config|--config|setup|-s|--setup)
         createenv
     ;;
-
-    install|-i|--install)
+    -i|install|--install)
         install
     ;;
-
-    uninstall|-u|--uninstall)
+    -u|uninstall|--uninstall)
         uninstall
     ;;
+    -h|help|--help|\?)
+        echo -e "
+    Usage: $(basename "$0") [OPTION] [value]
 
-    help|-h|--help|?)
-    echo -e "
-        Usage: $0 [-c|-a|-d|--install|--help] <params>
+    e.g.  $(basename "$0") -a \"deployed new SSL certificate\"
 
-        e.g. $0 -a \"start web migration\"
+    Options:
 
-        Parameter:
-
-           -a | addlog    | --addlog \"...\"               add new log entry
-           -d | rmlog     | --rmlog [loglinenumber]      delete specific log entry
-           -l | log       | --log                        list log entries
-           -c | config    | --config                     restart setup
-           -i | install   | --install                    install dynmotd
-           -u | uninstall | --uninstall                  uninstall dynmotd
-     "
+      -a | --addlog \"...\"           Add a maintenance log entry
+      -d | --rmlog  [line-number]   Delete a log entry by line number
+      -l | --log                    List all log entries
+      -c | --config                 Reconfigure environment settings
+      -i | --install                Install dynmotd and its dependencies
+      -u | --uninstall              Uninstall dynmotd (log deletion is optional)
+      -h | --help                   Show this help
+    "
     ;;
-
     *)
         echo "Unknown parameter: $1"
-        echo "Use $0 --help for usage information"
+        echo "Use $(basename "$0") --help for usage."
         exit 1
     ;;
 esac
