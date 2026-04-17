@@ -33,6 +33,10 @@ RESOLVEFAIL2BAN_IPS="1"    # resolve banned IPs via DNS (requires SHOWFAIL2BAN_I
 FAILED_SERVICES_INFO="1"    # failed systemd services (auto-hidden if none failed)
 FAILED_SERVICES_ALWAYS="0"  # always show Failed Services section, even when none failed
 NETWORK_INFO="1"            # network interface state and speed
+WEATHER_INFO="1"            # weather section via wttr.in (auto-hidden if curl unavailable)
+WEATHER_ALWAYS="0"          # always show Weather section, even if fetch fails
+WEATHER_CITY=""             # city name for weather lookup (empty = auto-detect from IP)
+WEATHER_CACHE_HOURS="1"     # hours before weather data is refreshed (0 = always live)
 VERSION_INFO="1"            # version banner
 
 ## number of maintenance log lines shown in MAINTENANCE_INFO
@@ -1106,6 +1110,57 @@ function show_failed_services_info() {
 }
 
 
+function show_weather_info() {
+    [ "$WEATHER_INFO" = "1" ] || [ "$WEATHER_ALWAYS" = "1" ] || return
+    command -v curl >/dev/null 2>&1 || return
+
+    local cache_file="${DYNMOTDDIR}/weather_cache"
+    local weather=""
+
+    ## Use cached data if still within WEATHER_CACHE_HOURS
+    if [ -f "$cache_file" ] && [ "${WEATHER_CACHE_HOURS:-1}" -gt 0 ]; then
+        local now mtime age
+        now=$(date +%s)
+        mtime=$(stat -c %Y "$cache_file" 2>/dev/null) \
+            || mtime=$(stat -f %m "$cache_file" 2>/dev/null)
+        age=$(( now - ${mtime:-0} ))
+        if (( age < WEATHER_CACHE_HOURS * 3600 )); then
+            weather=$(cat "$cache_file" 2>/dev/null)
+        fi
+    fi
+
+    ## Fetch fresh data if cache is empty or expired
+    if [ -z "$weather" ]; then
+        local location="${WEATHER_CITY:-}"
+        weather=$(curl -s --max-time 3 \
+            "wttr.in/${location}?format=%l|%C|%t|%f|%h|%w" 2>/dev/null)
+        if [ -n "$weather" ]; then
+            mkdir -p "$DYNMOTDDIR"
+            echo "$weather" > "$cache_file"
+        fi
+    fi
+
+    if [ -z "$weather" ]; then
+        [ "$WEATHER_ALWAYS" = "1" ] || return
+        echo -e "\n$(_section_header "Weather")"
+        printf "${F1}         Weather ${F2}= ${F4}unavailable\n"
+        printf "${F1}"
+        return
+    fi
+
+    local loc condition temp feels humidity wind
+    IFS='|' read -r loc condition temp feels humidity wind <<< "$weather"
+
+    echo -e "\n$(_section_header "Weather")"
+    printf "${F1}        Location ${F2}= ${F3}%s\n" "$loc"
+    printf "${F1}         Weather ${F2}= ${F3}%s\n" "$condition"
+    printf "${F1}     Temperature ${F2}= ${F3}%s ${F1}(feels like ${F3}%s${F1})\n" "$temp" "$feels"
+    printf "${F1}        Humidity ${F2}= ${F3}%s\n" "$humidity"
+    printf "${F1}            Wind ${F2}= ${F3}%s\n" "$wind"
+    printf "${F1}"
+}
+
+
 function show_info() {
     _check_dependencies \
         || echo "Warning: some dependencies are missing — output may be incomplete."
@@ -1117,7 +1172,7 @@ function show_info() {
         ## mktemp failed — fall back to sequential output
         show_system_info; show_storage_info; show_network_info
         show_user_info; show_update_info; show_environment_info
-        show_failed_services_info; show_fail2ban_info; show_maintenance_info; show_version_info
+        show_failed_services_info; show_fail2ban_info; show_maintenance_info; show_weather_info; show_version_info
         echo -e "${C_RESET}"
         return
     }
@@ -1132,11 +1187,12 @@ function show_info() {
     show_failed_services_info   > "${tmpdir}/07" &
     show_fail2ban_info          > "${tmpdir}/08" &
     show_maintenance_info       > "${tmpdir}/09" &
-    show_version_info           > "${tmpdir}/10" &
+    show_weather_info           > "${tmpdir}/10" &
+    show_version_info           > "${tmpdir}/11" &
 
     wait  ## wait for all sections to complete
 
-    cat "${tmpdir}"/0* 2>/dev/null
+    cat "${tmpdir}"/* 2>/dev/null
     rm -rf "$tmpdir"
     echo -e "${C_RESET}"
 }
