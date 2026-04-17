@@ -838,7 +838,7 @@ function show_fail2ban_info() {
 
     if [ ${#jails[@]} -eq 0 ]; then
         echo -e "
-${F2}============[ ${F1}Fail2Ban${F2} ]=========================================================
+${F2}============[ ${F1}Fail2Ban${F2} ]=======================================================
 ${F4}fail2ban is not running or no active jails${F1}"
         return
     fi
