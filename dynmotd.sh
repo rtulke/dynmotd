@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.17.0"
+VERSION="dynmotd v1.18.0"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -30,6 +30,9 @@ VERSION_INFO="1"            # version banner
 
 ## number of maintenance log lines shown in MAINTENANCE_INFO
 LIST_LOG_ENTRY="2"
+
+## hours before the apt update count cache is refreshed (0 = always live)
+UPDATE_CACHE_HOURS="6"
 
 
 ## ANSI color definitions
@@ -633,9 +636,24 @@ function show_update_info() {
     local REBOOT_PACKAGES="N/A"
 
     if command -v apt-get >/dev/null 2>&1; then
-        ## Count "Inst" lines from apt simulate — each = one package to upgrade
-        UPDATES=$(apt-get -s -qq dist-upgrade 2>/dev/null | grep -c '^Inst')
-        UPDATES=${UPDATES:-0}
+        ## Cache apt update count to avoid running apt-get -s on every login (1–3 sec).
+        ## Cache file is refreshed when older than UPDATE_CACHE_HOURS hours.
+        local cache_file="${DYNMOTDDIR}/update_cache"
+        local needs_refresh=true
+        if [ -f "$cache_file" ]; then
+            local cache_mtime cache_age
+            cache_mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+            cache_age=$(( $(date +%s) - cache_mtime ))
+            (( cache_age < UPDATE_CACHE_HOURS * 3600 )) && needs_refresh=false
+        fi
+        if $needs_refresh; then
+            UPDATES=$(apt-get -s -qq dist-upgrade 2>/dev/null | grep -c '^Inst')
+            UPDATES=${UPDATES:-0}
+            mkdir -p "$DYNMOTDDIR"
+            echo "$UPDATES" > "$cache_file"
+        else
+            UPDATES=$(< "$cache_file")
+        fi
 
         if [ -f /var/run/reboot-required ]; then
             REBOOT_REQUIRED="Yes"
@@ -989,15 +1007,33 @@ function show_info() {
     _check_dependencies \
         || echo "Warning: some dependencies are missing — output may be incomplete."
 
-    show_system_info
-    show_storage_info
-    show_network_info
-    show_user_info
-    show_update_info
-    show_environment_info
-    show_maintenance_info
-    show_fail2ban_info
-    show_version_info
+    ## Run all sections in parallel, each writing to a numbered temp file.
+    ## Output is collected and printed in order once all sections complete.
+    local tmpdir
+    tmpdir=$(mktemp -d 2>/dev/null) || {
+        ## mktemp failed — fall back to sequential output
+        show_system_info; show_storage_info; show_network_info
+        show_user_info; show_update_info; show_environment_info
+        show_maintenance_info; show_fail2ban_info; show_version_info
+        echo -e "${C_RESET}"
+        return
+    }
+    chmod 700 "$tmpdir"
+
+    show_system_info      > "${tmpdir}/01" &
+    show_storage_info     > "${tmpdir}/02" &
+    show_network_info     > "${tmpdir}/03" &
+    show_user_info        > "${tmpdir}/04" &
+    show_update_info      > "${tmpdir}/05" &
+    show_environment_info > "${tmpdir}/06" &
+    show_maintenance_info > "${tmpdir}/07" &
+    show_fail2ban_info    > "${tmpdir}/08" &
+    show_version_info     > "${tmpdir}/09" &
+
+    wait  ## wait for all sections to complete
+
+    cat "${tmpdir}"/0* 2>/dev/null
+    rm -rf "$tmpdir"
     echo -e "${C_RESET}"
 }
 
