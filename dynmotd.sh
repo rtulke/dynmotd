@@ -1051,62 +1051,6 @@ ${F1}"
 }
 
 
-## Resolve banned IPs for all active fail2ban jails (parallel DNS lookups).
-## Used by --resolve for standalone testing without the full MOTD.
-function show_resolve() {
-    command -v fail2ban-client >/dev/null 2>&1 || {
-        echo "fail2ban-client not found or not in PATH"
-        return 1
-    }
-
-    local -a jails
-    mapfile -t jails < <(
-        fail2ban-client status 2>/dev/null \
-            | awk -F':\t' '/Jail list/ {print $2}' \
-            | tr ',' '\n' | tr -d ' \t' | grep -v '^$'
-    )
-
-    if [ ${#jails[@]} -eq 0 ]; then
-        echo "fail2ban is not running or has no active jails"
-        return
-    fi
-
-    for jail in "${jails[@]}"; do
-        local -a ips
-        mapfile -t ips < <(
-            fail2ban-client status "$jail" 2>/dev/null \
-                | grep 'Banned IP list:' \
-                | sed 's/.*Banned IP list:[[:space:]]*//' \
-                | tr ' ' '\n' | grep -v '^$'
-        )
-        [ ${#ips[@]} -eq 0 ] && continue
-
-        echo "Jail: $jail  (${#ips[@]} IPs banned)"
-
-        local -a ip_tmpfiles=()
-        for ip in "${ips[@]}"; do
-            local tmpf
-            tmpf=$(mktemp 2>/dev/null) || tmpf="/tmp/dynmotd_resolve_$$_${#ip_tmpfiles[@]}"
-            ip_tmpfiles+=("$tmpf")
-            (
-                local hostname=""
-                if command -v getent >/dev/null 2>&1; then
-                    hostname=$(timeout 1 getent hosts "$ip" 2>/dev/null | awk '{print $2; exit}')
-                elif command -v host >/dev/null 2>&1; then
-                    hostname=$(host -W 1 "$ip" 2>/dev/null \
-                        | awk '/domain name pointer/ {sub(/\.$/, "", $NF); print $NF; exit}')
-                fi
-                printf "  %-20s %s\n" "$ip" "${hostname:---}" > "$tmpf"
-            ) &
-        done
-        wait
-        for tmpf in "${ip_tmpfiles[@]}"; do
-            cat "$tmpf" 2>/dev/null
-            rm -f "$tmpf"
-        done
-    done
-}
-
 
 function show_info() {
     _check_dependencies \
@@ -1172,9 +1116,6 @@ case "$1" in
     -u|uninstall|--uninstall)
         uninstall
     ;;
-    -r|resolve|--resolve)
-        show_resolve
-    ;;
     -v|version|--version)
         echo "$VERSION"
     ;;
@@ -1193,7 +1134,6 @@ case "$1" in
       -i | --install                Install dynmotd and its dependencies
       -U | --update                 Update binary only (no setup, safe for Ansible/cron)
       -u | --uninstall              Uninstall dynmotd (log deletion is optional)
-      -r | --resolve                Resolve fail2ban banned IPs (parallel DNS, for testing)
       -v | --version                Show version and exit
       -h | --help                   Show this help
     "
