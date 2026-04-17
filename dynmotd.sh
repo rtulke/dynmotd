@@ -277,7 +277,7 @@ function createenv() {
     local cur_sla="${SYSSLA:-None}"
 
     echo -e "
-${F2}============[ ${F1}Environment Setup${F2} ]=============================================
+$(_section_header "Environment Setup")
 ${F1}"
     echo "Assign a role and environment label for: $(hostname --fqdn 2>/dev/null || hostname)"
     echo
@@ -361,7 +361,7 @@ function listlog() {
 #### Install / Uninstall
 
 function install() {
-    echo -e "${F2}============[ ${F1}Installing dynmotd${F2} ]===========================================${F1}"
+    echo -e "$(_section_header "Installing dynmotd")${F1}"
     echo
 
     ## Install missing system packages for this distribution
@@ -420,7 +420,7 @@ function update() {
 function uninstall() {
     local target="${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
 
-    echo -e "${F2}============[ ${F1}Uninstalling dynmotd${F2} ]=========================================${F1}"
+    echo -e "$(_section_header "Uninstalling dynmotd")${F1}"
     echo
 
     ## Collect program files that exist
@@ -492,6 +492,19 @@ function uninstall() {
 
 #### Output sections
 
+## Generates a section header with consistent 79-char visible width.
+## Fixed parts: "============[ " (14) + " ]" (2) = 16 chars
+## Trailing padding = 63 - ${#label}
+## Usage inside echo -e: "$(_section_header "Label")"
+function _section_header() {
+    local label="$1"
+    local trail=$(( 63 - ${#label} ))
+    local padding
+    padding=$(printf '%*s' "$trail" '' | tr ' ' '=')
+    printf '%s' "${F2}============[ ${F1}${label}${F2} ]${padding}"
+}
+
+
 function show_system_info() {
     [ "$SYSTEM_INFO" = "1" ] || return
 
@@ -562,7 +575,7 @@ function show_system_info() {
     [ "$PROCMAX" = "unlimited" ] && PROCMAX="∞"
 
     echo -e "
-${F2}============[ ${F1}System Info${F2} ]====================================================
+$(_section_header "System Info")
 ${F1}        Hostname ${F2}= ${F3}${HOSTNAME}
 ${F1}      Address v4 ${F2}= ${F3}${IPV4}${IPV6_LINE}
 ${F1}          Kernel ${F2}= ${F3}${UNAME}
@@ -585,7 +598,8 @@ function show_update_info() {
 
     if command -v apt-get >/dev/null 2>&1; then
         ## Count "Inst" lines from apt simulate — each = one package to upgrade
-        UPDATES=$(apt-get -s -qq dist-upgrade 2>/dev/null | grep -c '^Inst' || echo "0")
+        UPDATES=$(apt-get -s -qq dist-upgrade 2>/dev/null | grep -c '^Inst')
+        UPDATES=${UPDATES:-0}
 
         if [ -f /var/run/reboot-required ]; then
             REBOOT_REQUIRED="Yes"
@@ -633,7 +647,8 @@ function show_update_info() {
 
     elif command -v zypper >/dev/null 2>&1; then
         ## zypper list-updates: count lines starting with "|" (table rows)
-        UPDATES=$(zypper list-updates 2>/dev/null | grep -c '^|' || echo "0")
+        UPDATES=$(zypper list-updates 2>/dev/null | grep -c '^|')
+        UPDATES=${UPDATES:-0}
         zypper needs-rebooting >/dev/null 2>&1 \
             && REBOOT_REQUIRED="No" || REBOOT_REQUIRED="Yes"
 
@@ -643,7 +658,7 @@ function show_update_info() {
     fi
 
     echo -e "
-${F2}============[ ${F1}Update Info${F2} ]====================================================
+$(_section_header "Update Info")
 ${F1}Available Updates ${F2}= ${F3}${UPDATES}
 ${F1}  Reboot Required ${F2}= ${F3}${REBOOT_REQUIRED}
 ${F1}  Reboot Packages ${F2}= ${F3}${REBOOT_PACKAGES}${F1}"
@@ -673,7 +688,7 @@ function show_storage_info() {
     }')
 
     echo -e "
-${F2}============[ ${F1}Storage Info${F2} ]===================================================
+$(_section_header "Storage Info")
 ${F3}${STORAGE}${F1}"
 }
 
@@ -759,7 +774,7 @@ function show_user_info() {
         | sed 's/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
     echo -e "
-${F2}============[ ${F1}User Data${F2} ]======================================================
+$(_section_header "User Data")
 ${F1}    Your Username ${F2}= ${F3}${WHOIAM}
 ${F1}  Your Privileges ${F2}= ${F3}${ID}
 ${F1} Current Sessions ${F2}= ${F3}[${SESSIONS}] ${LOGGEDIN}
@@ -795,7 +810,7 @@ function show_environment_info() {
     fi
 
     echo -e "
-${F2}============[ ${F1}Environment Data${F2} ]===============================================
+$(_section_header "Environment Data")
 ${F1}         Function ${F2}= ${F3}${SYSFUNCTION}
 ${F1}      Environment ${F2}= ${F3}${SYSENV}
 ${F1}    Service Level ${F2}= ${F3}${SYSSLA}${F1}"
@@ -807,7 +822,7 @@ function show_maintenance_info() {
 
     if [ ! -f "$MAINLOG" ]; then
         echo -e "
-${F2}============[ ${F1}Maintenance Information${F2} ]========================================
+$(_section_header "Maintenance Information")
 ${F4}No maintenance log found at ${MAINLOG}${F1}"
         return
     fi
@@ -816,7 +831,7 @@ ${F4}No maintenance log found at ${MAINLOG}${F1}"
     MAINTENANCE=$(listlog | head -n "${LIST_LOG_ENTRY}")
 
     echo -e "
-${F2}============[ ${F1}Maintenance Information${F2} ]========================================
+$(_section_header "Maintenance Information")
 ${F4}${MAINTENANCE}${F1}"
 }
 
@@ -838,7 +853,7 @@ function show_fail2ban_info() {
 
     if [ ${#jails[@]} -eq 0 ]; then
         echo -e "
-${F2}============[ ${F1}Fail2Ban${F2} ]=======================================================
+$(_section_header "Fail2Ban")
 ${F4}fail2ban is not running or no active jails${F1}"
         return
     fi
@@ -854,7 +869,7 @@ ${F4}fail2ban is not running or no active jails${F1}"
     summary="${summary%  }"     # strip trailing spaces
 
     echo -e "
-${F2}============[ ${F1}Fail2Ban${F2} ]=========================================================
+$(_section_header "Fail2Ban")
 ${F1}    Total Banned ${F2}= ${F3}${banned_total}
 ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
 }
