@@ -766,7 +766,7 @@ function show_storage_info() {
         }' \
         | sort -t'|' -k1 -rn)
 
-    echo -e "${F1}"
+    printf "${F1}"
 }
 
 
@@ -987,7 +987,7 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
             printf "${F3}    %-20s${F1}%s\n" "$ip" "${hostname:---}"
         done
     done
-    echo -e "${F1}"
+    printf "${F1}"
 }
 
 
@@ -1020,7 +1020,7 @@ function show_network_info() {
     done < <(ip -brief link show 2>/dev/null \
         | awk '{print $1, toupper($2)}')
 
-    echo -e "${F1}"
+    printf "${F1}"
 }
 
 
