@@ -25,6 +25,9 @@ ENVIRONMENT_INFO="1"        # environment information
 MAINTENANCE_INFO="1"        # maintenance log
 UPDATE_INFO="1"             # available package updates
 FAIL2BAN_INFO="1"          # fail2ban banned IPs (only shown if fail2ban-client is installed)
+FAIL2BAN_ALWAYS="0"        # always show Fail2Ban section, even if not installed or no active jails
+UPDATE_ALWAYS="0"          # always show Update section, even if UPDATE_INFO="0"
+MAINTENANCE_ALWAYS="0"     # always show Maintenance section, even if MAINTENANCE_INFO="0"
 SHOWFAIL2BAN_IPS="1"       # show individual banned IPs per jail (no DNS)
 RESOLVEFAIL2BAN_IPS="1"    # resolve banned IPs via DNS (requires SHOWFAIL2BAN_IPS="1")
 FAILED_SERVICES_INFO="1"    # failed systemd services (auto-hidden if none failed)
@@ -633,7 +636,7 @@ ${F1}       Processes ${F2}= ${F3}${PROCCOUNT} of ${PROCMAX} MAX${F1}"
 
 
 function show_update_info() {
-    [ "$UPDATE_INFO" = "1" ] || return
+    [ "$UPDATE_INFO" = "1" ] || [ "$UPDATE_ALWAYS" = "1" ] || return
 
     local UPDATES="Unknown"
     local REBOOT_REQUIRED="Unknown"
@@ -909,7 +912,7 @@ ${F1}    Service Level ${F2}= ${F3}${SYSSLA}${F1}"
 
 
 function show_maintenance_info() {
-    [ "$MAINTENANCE_INFO" = "1" ] || return
+    [ "$MAINTENANCE_INFO" = "1" ] || [ "$MAINTENANCE_ALWAYS" = "1" ] || return
 
     if [ ! -f "$MAINLOG" ]; then
         echo -e "
@@ -928,8 +931,15 @@ ${F4}${MAINTENANCE}${F1}"
 
 
 function show_fail2ban_info() {
-    [ "$FAIL2BAN_INFO" = "1" ] || return
-    command -v fail2ban-client >/dev/null 2>&1 || return
+    [ "$FAIL2BAN_INFO" = "1" ] || [ "$FAIL2BAN_ALWAYS" = "1" ] || return
+
+    if ! command -v fail2ban-client >/dev/null 2>&1; then
+        [ "$FAIL2BAN_ALWAYS" = "1" ] || return
+        echo -e "\n$(_section_header "Fail2Ban")"
+        printf "${F1}    Fail2Ban ${F2}= ${F3}not installed\n"
+        printf "${F1}"
+        return
+    fi
 
     local -a jails
     local banned_total=0
