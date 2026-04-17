@@ -514,7 +514,9 @@ function _progress_bar() {
     local pct filled empty bar_filled bar_empty
 
     if (( max == 0 )); then
-        printf "${F2}[${F1}%-${width}s${F2}]${F3}  0%%" ''
+        local empty_bar
+        empty_bar=$(printf '%*s' "$width" '' | tr ' ' '-')
+        printf "${F2}[${F1}%s${F2}]${F3}  0%%" "$empty_bar"
         return
     fi
 
@@ -524,8 +526,8 @@ function _progress_bar() {
     (( filled > width )) && filled=$width
     empty=$(( width - filled ))
 
-    bar_filled=$(printf '%*s' "$filled" '' | tr ' ' '█')
-    bar_empty=$(printf  '%*s' "$empty"  '' | tr ' ' '░')
+    bar_filled=$(printf '%*s' "$filled" '' | tr ' ' '#')
+    bar_empty=$(printf  '%*s' "$empty"  '' | tr ' ' '-')
 
     printf "${F2}[${F3}%s${F1}%s${F2}]${F3} %3d%%" \
         "$bar_filled" "$bar_empty" "$pct"
@@ -714,6 +716,10 @@ function show_storage_info() {
     [ "$STORAGE_INFO" = "1" ] || return
 
     echo -e "\n$(_section_header "Storage Info")"
+
+    ## Header line — aligned with data rows (bar = 26 visible chars)
+    printf "${F1}%-26s  %-7s  %6s used of %6s  %s\n" \
+        "Utilization" "Type" "Used" "Size" "Mount"
 
     ## Exclude virtual/overlay filesystems; extract pct + fields via awk;
     ## sort descending by usage percentage; draw one bar per filesystem.
