@@ -37,6 +37,8 @@ WEATHER_INFO="1"            # weather section via wttr.in (auto-hidden if curl u
 WEATHER_ALWAYS="0"          # always show Weather section, even if fetch fails
 WEATHER_CITY=""             # city name for weather lookup (empty = auto-detect from IP)
 WEATHER_CACHE_HOURS="1"     # hours before weather data is refreshed (0 = always live)
+WEATHER_UNITS=""            # unit system: m=metric  u=USCS  M=wind in m/s  (empty=wttr.in default)
+WEATHER_VIEW=""             # view flags: 0=current only  1=+1day  2=+2days  n=narrow  q=quiet  Q=superquiet  T=no-colors
 VERSION_INFO="1"            # version banner
 
 ## number of maintenance log lines shown in MAINTENANCE_INFO
@@ -1132,8 +1134,10 @@ function show_weather_info() {
     ## Fetch fresh data if cache is empty or expired
     if [ -z "$weather" ]; then
         local location="${WEATHER_CITY:-}"
-        weather=$(curl -s --max-time 3 \
-            "wttr.in/${location}?format=%l|%C|%t|%f|%h|%w" 2>/dev/null)
+        local url="wttr.in/${location}?format=%l|%C|%t|%f|%h|%w"
+        [ -n "${WEATHER_UNITS:-}" ] && url="${url}&${WEATHER_UNITS}"
+        [ -n "${WEATHER_VIEW:-}"  ] && url="${url}&${WEATHER_VIEW}"
+        weather=$(curl -s --max-time 3 "$url" 2>/dev/null)
         if [ -n "$weather" ]; then
             mkdir -p "$DYNMOTDDIR"
             echo "$weather" > "$cache_file"
@@ -1178,16 +1182,16 @@ function show_info() {
     }
     chmod 700 "$tmpdir"
 
-    show_system_info      > "${tmpdir}/01" &
-    show_storage_info     > "${tmpdir}/02" &
-    show_network_info     > "${tmpdir}/03" &
-    show_user_info        > "${tmpdir}/04" &
-    show_update_info      > "${tmpdir}/05" &
-    show_environment_info > "${tmpdir}/06" &
-    show_failed_services_info   > "${tmpdir}/07" &
-    show_fail2ban_info          > "${tmpdir}/08" &
-    show_maintenance_info       > "${tmpdir}/09" &
-    show_weather_info           > "${tmpdir}/10" &
+    show_system_info            > "${tmpdir}/01" &
+    show_weather_info           > "${tmpdir}/02" &
+    show_storage_info           > "${tmpdir}/03" &
+    show_network_info           > "${tmpdir}/04" &
+    show_user_info              > "${tmpdir}/05" &
+    show_update_info            > "${tmpdir}/06" &
+    show_environment_info       > "${tmpdir}/07" &
+    show_failed_services_info   > "${tmpdir}/08" &
+    show_fail2ban_info          > "${tmpdir}/09" &
+    show_maintenance_info       > "${tmpdir}/10" &
     show_version_info           > "${tmpdir}/11" &
 
     wait  ## wait for all sections to complete

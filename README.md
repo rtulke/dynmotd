@@ -215,6 +215,8 @@ Each section has an `_INFO` toggle and an optional `_ALWAYS` override:
 | `WEATHER_ALWAYS` | `0` | Always show Weather section, even if fetch fails (`= unavailable`) |
 | `WEATHER_CITY` | *(empty)* | City for weather lookup — empty = auto-detect from server IP |
 | `WEATHER_CACHE_HOURS` | `1` | Hours before weather data is re-fetched (0 = always live) |
+| `WEATHER_UNITS` | *(empty)* | Unit system: `m` = metric, `u` = USCS, `M` = wind in m/s (empty = wttr.in default) |
+| `WEATHER_VIEW` | *(empty)* | View flags: `0` current only · `1` +1 day · `2` +2 days · `n` narrow · `q` quiet · `Q` super-quiet · `T` no colors |
 | `VERSION_INFO` | `1` | Version banner |
 
 `1` = enabled, `0` = disabled.
@@ -224,15 +226,15 @@ Each section has an `_INFO` toggle and an optional `_ALWAYS` override:
 Sections are rendered in this fixed order:
 
 1. System Info
-2. Storage Info
-3. Network Interfaces
-4. User Data
-5. Update Info
-6. Environment Data
-7. Failed Services
-8. Fail2Ban
-9. Maintenance Information
-10. Weather
+2. Weather
+3. Storage Info
+4. Network Interfaces
+5. User Data
+6. Update Info
+7. Environment Data
+8. Failed Services
+9. Fail2Ban
+10. Maintenance Information
 11. Version banner
 
 ### Maintenance log display
