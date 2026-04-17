@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.14.0"
+VERSION="dynmotd v1.15.0"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -505,11 +505,38 @@ function _section_header() {
 }
 
 
+## Renders a progress bar using the active color scheme.
+## F3 = filled blocks (█)   F1 = empty blocks (░)   F2 = brackets [ ]
+## Output contains real ESC codes so it works in both echo -e and printf %s.
+## Usage: bar=$(_progress_bar <value> <max> [width=20])
+function _progress_bar() {
+    local val=$1 max=$2 width=${3:-20}
+    local pct filled empty bar_filled bar_empty
+
+    if (( max == 0 )); then
+        printf "${F2}[${F1}%-${width}s${F2}]${F3}  0%%" ''
+        return
+    fi
+
+    pct=$(( val * 100 / max ))
+    (( pct   > 100   )) && pct=100
+    filled=$(( val * width / max ))
+    (( filled > width )) && filled=$width
+    empty=$(( width - filled ))
+
+    bar_filled=$(printf '%*s' "$filled" '' | tr ' ' '█')
+    bar_empty=$(printf  '%*s' "$empty"  '' | tr ' ' '░')
+
+    printf "${F2}[${F3}%s${F1}%s${F2}]${F3} %3d%%" \
+        "$bar_filled" "$bar_empty" "$pct"
+}
+
+
 function show_system_info() {
     [ "$SYSTEM_INFO" = "1" ] || return
 
     local HOSTNAME IPV4 IPV6 IPV6_LINE UNAME DISTRIBUTION PLATFORM UPTIME
-    local CPUS CPUMODEL LOADAVG MEMAVAIL MEMMAX SWAPFREE SWAPMAX PROCCOUNT PROCMAX
+    local CPUS CPUMODEL LOADAVG MEMAVAIL MEMMAX MEMUSED SWAPFREE SWAPMAX SWAPUSED PROCCOUNT PROCMAX
 
     HOSTNAME=$(hostname --fqdn 2>/dev/null || hostname)
 
@@ -567,6 +594,8 @@ function show_system_info() {
         /^SwapTotal:/    { st=$2/1024 }
         END { printf "%.0f %.0f %.0f %.0f", a, t, sf, st }
     ' /proc/meminfo)"
+    MEMUSED=$(( MEMMAX - MEMAVAIL ))
+    SWAPUSED=$(( SWAPMAX - SWAPFREE ))
 
     ## ps --no-headers is GNU/procps; fall back for minimal systems
     PROCCOUNT=$(ps --no-headers -eo pid 2>/dev/null | wc -l \
@@ -583,8 +612,8 @@ ${F1}    Distribution ${F2}= ${F3}${DISTRIBUTION} ${PLATFORM}
 ${F1}          Uptime ${F2}= ${F3}${UPTIME}
 ${F1}    Load Average ${F2}= ${F3}${LOADAVG} ${F1}(1m 5m 15m)
 ${F1}             CPU ${F2}= ${F3}${CPUS} x ${CPUMODEL}
-${F1}          Memory ${F2}= ${F3}${MEMAVAIL} MB Available of ${MEMMAX} MB Total
-${F1}     Swap Memory ${F2}= ${F3}${SWAPFREE} MB Free of ${SWAPMAX} MB Total
+${F1}          Memory ${F2}= $(_progress_bar "${MEMUSED}" "${MEMMAX}")  ${F3}${MEMAVAIL} MB free of ${MEMMAX} MB
+${F1}     Swap Memory ${F2}= $(_progress_bar "${SWAPUSED}" "${SWAPMAX}")  ${F3}${SWAPFREE} MB free of ${SWAPMAX} MB
 ${F1}       Processes ${F2}= ${F3}${PROCCOUNT} of ${PROCMAX} MAX${F1}"
 }
 
@@ -684,28 +713,23 @@ ${F1}  Reboot Packages ${F2}= ${F3}${REBOOT_PACKAGES}${F1}"
 function show_storage_info() {
     [ "$STORAGE_INFO" = "1" ] || return
 
-    ## Exclude virtual/overlay filesystems; sort by usage (descending)
-    local STORAGE
-    STORAGE=$(df -hT 2>/dev/null | awk '
-        !/docker|tmpfs|devtmpfs|squashfs|udev|overlay|shm|cgroupfs/ {
-            if ($0 ~ /^File|^Datei/) print "\033[0;37m" $0 "\033[1;32m"
-            else if (NR > 1) print
-        }
-    ' | awk '{
-        line[NR]=$0; size[NR]=$6
-    } END {
-        for (i=NR; i>=1; i--)
-            for (j=1; j<i; j++)
-                if (size[j] < size[j+1]) {
-                    t=line[j]; line[j]=line[j+1]; line[j+1]=t
-                    t=size[j]; size[j]=size[j+1]; size[j+1]=t
-                }
-        for (i=1; i<=NR; i++) print line[i]
-    }')
+    echo -e "\n$(_section_header "Storage Info")"
 
-    echo -e "
-$(_section_header "Storage Info")
-${F3}${STORAGE}${F1}"
+    ## Exclude virtual/overlay filesystems; extract pct + fields via awk;
+    ## sort descending by usage percentage; draw one bar per filesystem.
+    while IFS='|' read -r pct type size used avail mount; do
+        local bar
+        bar=$(_progress_bar "$pct" "100" 20)
+        printf "%s  ${F1}%-7s${F3}  %6s used of %6s  ${F1}%s\n" \
+            "$bar" "$type" "$used" "$size" "$mount"
+    done < <(df -hT 2>/dev/null \
+        | awk '!/docker|tmpfs|devtmpfs|squashfs|udev|overlay|shm|cgroupfs/ && NR > 1 {
+            pct=$6; gsub(/%/,"",pct)
+            printf "%03d|%s|%s|%s|%s|%s\n", pct,$2,$3,$4,$5,$7
+        }' \
+        | sort -t'|' -k1 -rn)
+
+    echo -e "${F1}"
 }
 
 
