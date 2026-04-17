@@ -398,8 +398,8 @@ function install() {
 }
 
 
-## --update: Binary aktualisieren ohne Setup-Flow (für Ansible/Puppet/cron)
-## Überschreibt nur das Binary — Logs, Config und environment.cfg bleiben erhalten.
+## --update: replace binary without running setup (safe for Ansible/Puppet/cron)
+## Only the binary is replaced — logs, config, and environment.cfg are untouched.
 function update() {
     local target="${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
 
@@ -500,7 +500,7 @@ function show_system_info() {
 
     HOSTNAME=$(hostname --fqdn 2>/dev/null || hostname)
 
-    ## IPv4 + IPv6: alle non-loopback Adressen via iproute2, fallback auf hostname -I
+    ## IPv4 + IPv6: all non-loopback addresses via iproute2, fallback to hostname -I
     if command -v ip >/dev/null 2>&1; then
         IPV4=$(ip -4 -brief addr show 2>/dev/null \
             | awk '$1 != "lo" && $2 != "DOWN" {
@@ -515,7 +515,7 @@ function show_system_info() {
         IPV6=""
     fi
     [ -z "$IPV4" ] && IPV4="Unknown"
-    ## IPv6-Zeile nur anzeigen wenn Adressen vorhanden
+    ## Only add IPv6 line if addresses are present
     IPV6_LINE=""
     [ -n "$IPV6" ] && IPV6_LINE="\n${F1}      Address v6 ${F2}= ${F3}${IPV6}"
 
@@ -541,12 +541,12 @@ function show_system_info() {
     CPUS=$(grep -c processor /proc/cpuinfo)
     CPUMODEL=$(grep -m1 'model name' /proc/cpuinfo | awk -F': ' '{print $2}')
 
-    ## Load Average aus /proc/loadavg (1m / 5m / 15m)
+    ## Load average from /proc/loadavg (1m / 5m / 15m)
     LOADAVG=$(awk '{print $1, $2, $3}' /proc/loadavg)
 
-    ## /proc/meminfo einmal via awk lesen — MemAvailable statt MemFree:
-    ## MemFree ist auf Linux irreführend niedrig (Kernel-Cache nicht eingerechnet).
-    ## MemAvailable zeigt den realistisch nutzbaren Speicher (seit Kernel 3.14).
+    ## Read /proc/meminfo once via awk — MemAvailable instead of MemFree:
+    ## MemFree is misleadingly low on Linux (kernel cache not counted as free).
+    ## MemAvailable shows realistic usable memory (available since kernel 3.14).
     read -r MEMAVAIL MEMMAX SWAPFREE SWAPMAX <<< "$(awk '
         /^MemAvailable:/ { a=$2/1024 }
         /^MemTotal:/     { t=$2/1024 }
@@ -829,7 +829,7 @@ function show_fail2ban_info() {
     local banned_total=0
     local summary=""
 
-    ## Jail-Liste aus fail2ban-client status
+    ## Retrieve active jail list from fail2ban-client status
     mapfile -t jails < <(
         fail2ban-client status 2>/dev/null \
             | awk -F':\t' '/Jail list/ {print $2}' \
@@ -851,7 +851,7 @@ ${F4}fail2ban is not running or no active jails${F1}"
         banned_total=$(( banned_total + banned ))
         summary+="${jail}:${banned}  "
     done
-    summary="${summary%  }"     # trailing spaces entfernen
+    summary="${summary%  }"     # strip trailing spaces
 
     echo -e "
 ${F2}============[ ${F1}Fail2Ban${F2} ]=========================================================
