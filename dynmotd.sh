@@ -27,6 +27,7 @@ UPDATE_INFO="1"             # available package updates
 FAIL2BAN_INFO="1"          # fail2ban banned IPs (only shown if fail2ban-client is installed)
 SHOWFAIL2BAN_IPS="1"       # show individual banned IPs per jail (no DNS)
 RESOLVEFAIL2BAN_IPS="1"    # resolve banned IPs via DNS (requires SHOWFAIL2BAN_IPS="1")
+FAILED_SERVICES_INFO="1"    # failed systemd services (auto-hidden if none failed)
 NETWORK_INFO="1"            # network interface state and speed
 VERSION_INFO="1"            # version banner
 
@@ -1060,6 +1061,35 @@ ${F1}"
 
 
 
+function show_failed_services_info() {
+    [ "$FAILED_SERVICES_INFO" = "1" ] || return
+    command -v systemctl >/dev/null 2>&1 || return
+
+    local -a units
+    mapfile -t units < <(
+        systemctl --failed --no-legend --no-pager 2>/dev/null \
+            | awk 'NF >= 4 { print ($1 ~ /^[a-zA-Z0-9_@:.-]/) ? $1 : $2 }'
+    )
+
+    ## Auto-hide when no services are in failed state
+    [ ${#units[@]} -eq 0 ] && return
+
+    echo -e "\n$(_section_header "Failed Services")"
+    printf "${F1}  Failed Services ${F2}= ${F4}%d\n" "${#units[@]}"
+
+    local max_len=0
+    for u in "${units[@]}"; do
+        (( ${#u} > max_len )) && max_len=${#u}
+    done
+    local field=$(( max_len + 1 ))
+
+    for u in "${units[@]}"; do
+        printf "${F4}    %-${field}s${F2}= ${F4}failed\n" "$u"
+    done
+    printf "${F1}"
+}
+
+
 function show_info() {
     _check_dependencies \
         || echo "Warning: some dependencies are missing — output may be incomplete."
@@ -1071,7 +1101,7 @@ function show_info() {
         ## mktemp failed — fall back to sequential output
         show_system_info; show_storage_info; show_network_info
         show_user_info; show_update_info; show_environment_info
-        show_maintenance_info; show_fail2ban_info; show_version_info
+        show_maintenance_info; show_fail2ban_info; show_failed_services_info; show_version_info
         echo -e "${C_RESET}"
         return
     }
@@ -1084,8 +1114,9 @@ function show_info() {
     show_update_info      > "${tmpdir}/05" &
     show_environment_info > "${tmpdir}/06" &
     show_maintenance_info > "${tmpdir}/07" &
-    show_fail2ban_info    > "${tmpdir}/08" &
-    show_version_info     > "${tmpdir}/09" &
+    show_fail2ban_info          > "${tmpdir}/08" &
+    show_failed_services_info   > "${tmpdir}/09" &
+    show_version_info           > "${tmpdir}/10" &
 
     wait  ## wait for all sections to complete
 
