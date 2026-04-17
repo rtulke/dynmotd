@@ -28,6 +28,7 @@ FAIL2BAN_INFO="1"          # fail2ban banned IPs (only shown if fail2ban-client 
 SHOWFAIL2BAN_IPS="1"       # show individual banned IPs per jail (no DNS)
 RESOLVEFAIL2BAN_IPS="1"    # resolve banned IPs via DNS (requires SHOWFAIL2BAN_IPS="1")
 FAILED_SERVICES_INFO="1"    # failed systemd services (auto-hidden if none failed)
+FAILED_SERVICES_ALWAYS="0"  # always show Failed Services section, even when none failed
 NETWORK_INFO="1"            # network interface state and speed
 VERSION_INFO="1"            # version banner
 
@@ -1071,8 +1072,13 @@ function show_failed_services_info() {
             | awk 'NF >= 4 { print ($1 ~ /^[a-zA-Z0-9_@:.-]/) ? $1 : $2 }'
     )
 
-    ## Auto-hide when no services are in failed state
-    [ ${#units[@]} -eq 0 ] && return
+    if [ ${#units[@]} -eq 0 ]; then
+        [ "$FAILED_SERVICES_ALWAYS" = "1" ] || return
+        echo -e "\n$(_section_header "Failed Services")"
+        printf "${F1}  Failed Services ${F2}= ${F3}none\n"
+        printf "${F1}"
+        return
+    fi
 
     echo -e "\n$(_section_header "Failed Services")"
     printf "${F1}  Failed Services ${F2}= ${F4}%d\n" "${#units[@]}"
