@@ -1117,7 +1117,7 @@ function show_info() {
         ## mktemp failed — fall back to sequential output
         show_system_info; show_storage_info; show_network_info
         show_user_info; show_update_info; show_environment_info
-        show_maintenance_info; show_fail2ban_info; show_failed_services_info; show_version_info
+        show_failed_services_info; show_fail2ban_info; show_maintenance_info; show_version_info
         echo -e "${C_RESET}"
         return
     }
@@ -1129,9 +1129,9 @@ function show_info() {
     show_user_info        > "${tmpdir}/04" &
     show_update_info      > "${tmpdir}/05" &
     show_environment_info > "${tmpdir}/06" &
-    show_maintenance_info > "${tmpdir}/07" &
+    show_failed_services_info   > "${tmpdir}/07" &
     show_fail2ban_info          > "${tmpdir}/08" &
-    show_failed_services_info   > "${tmpdir}/09" &
+    show_maintenance_info       > "${tmpdir}/09" &
     show_version_info           > "${tmpdir}/10" &
 
     wait  ## wait for all sections to complete
