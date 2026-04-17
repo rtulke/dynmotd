@@ -895,6 +895,7 @@ function show_info() {
     show_maintenance_info
     show_fail2ban_info
     show_version_info
+    echo -e "${C_RESET}"
 }
 
 
