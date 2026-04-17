@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.15.0"
+VERSION="dynmotd v1.16.0"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -25,6 +25,7 @@ ENVIRONMENT_INFO="1"        # environment information
 MAINTENANCE_INFO="1"        # maintenance log
 UPDATE_INFO="1"             # available package updates
 FAIL2BAN_INFO="1"          # fail2ban banned IPs (only shown if fail2ban-client is installed)
+NETWORK_INFO="1"            # network interface state and speed
 VERSION_INFO="1"            # version banner
 
 ## number of maintenance log lines shown in MAINTENANCE_INFO
@@ -932,6 +933,37 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
 }
 
 
+function show_network_info() {
+    [ "$NETWORK_INFO" = "1" ] || return
+    command -v ip >/dev/null 2>&1 || return
+
+    echo -e "\n$(_section_header "Network Interfaces")"
+
+    printf "${F1}  %-14s %-10s %s\n" "Interface" "State" "Speed"
+
+    while IFS= read -r iface state; do
+        [ "$iface" = "lo" ] && continue
+
+        local speed="--"
+        local speed_raw
+        speed_raw=$(cat "/sys/class/net/${iface}/speed" 2>/dev/null)
+        if [[ "$speed_raw" =~ ^[0-9]+$ ]] && (( speed_raw > 0 )); then
+            speed="${speed_raw} Mbps"
+        fi
+
+        local state_color="$F3"
+        [ "$state" != "UP" ] && state_color="$F4"
+
+        printf "${F3}  %-14s ${state_color}%-10s ${F3}%s\n" \
+            "$iface" "$state" "$speed"
+
+    done < <(ip -brief link show 2>/dev/null \
+        | awk '{print $1, toupper($2)}')
+
+    echo -e "${F1}"
+}
+
+
 function show_version_info() {
     [ "$VERSION_INFO" = "1" ] || return
     echo -e "
@@ -946,6 +978,7 @@ function show_info() {
 
     show_system_info
     show_storage_info
+    show_network_info
     show_user_info
     show_update_info
     show_environment_info
