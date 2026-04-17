@@ -984,7 +984,7 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
                 hostname=$(host -W 1 "$ip" 2>/dev/null \
                     | awk '/domain name pointer/ {sub(/\.$/, "", $NF); print $NF; exit}')
             fi
-            printf "${F4}    %-20s${F1}%s\n" "$ip" "${hostname:---}"
+            printf "${F3}    %-20s${F1}%s\n" "$ip" "${hostname:---}"
         done
     done
     echo -e "${F1}"
