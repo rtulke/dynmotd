@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.13.0"
+VERSION="dynmotd v1.14.0"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -643,7 +643,13 @@ function show_update_info() {
     elif command -v yum >/dev/null 2>&1; then
         UPDATES=$(yum check-update -q 2>/dev/null \
             | awk '/^[A-Za-z0-9]/ && !/^Last|^Loaded|^Loading|^Updated/ {c++} END {print c+0}')
-        REBOOT_REQUIRED="Unknown"
+        ## needs-restarting -r exits 1 if reboot needed (same tool as dnf)
+        if command -v needs-restarting >/dev/null 2>&1; then
+            needs-restarting -r >/dev/null 2>&1 \
+                && REBOOT_REQUIRED="No" || REBOOT_REQUIRED="Yes"
+        else
+            REBOOT_REQUIRED="Unknown"
+        fi
 
     elif command -v zypper >/dev/null 2>&1; then
         ## zypper list-updates: count lines starting with "|" (table rows)
@@ -654,7 +660,17 @@ function show_update_info() {
 
     elif command -v pacman >/dev/null 2>&1; then
         UPDATES=$(pacman -Qu 2>/dev/null | wc -l)
-        REBOOT_REQUIRED="Unknown"
+        ## If the running kernel's module directory is no longer owned by any
+        ## installed package, the kernel was upgraded and a reboot is needed.
+        if pacman -Qo "/lib/modules/$(uname -r)" >/dev/null 2>&1; then
+            REBOOT_REQUIRED="No"
+        else
+            REBOOT_REQUIRED="Yes"
+        fi
+
+    elif command -v apk >/dev/null 2>&1; then
+        UPDATES=$(apk list --upgradeable 2>/dev/null | wc -l)
+        REBOOT_REQUIRED=$([ -f /var/run/reboot-required ] && echo "Yes" || echo "No")
     fi
 
     echo -e "

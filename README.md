@@ -19,7 +19,7 @@ Dynamic Message of the Day — a single Bash script that displays system informa
 
 ## Supported Linux Distributions
 
-Distributions actively supported (last ~10 years, 2015 – 2025):
+Distributions actively supported (last ~10 years, 2015 – 2026):
 
 ### Debian family
 | Distribution            | Versions / Releases          | Status              |
