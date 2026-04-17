@@ -51,24 +51,50 @@ C_YELLOW="\033[1;33m"
 C_RESET="\033[0m"
 
 #### color schemes
+## F1 = labels/text   F2 = borders/separators   F3 = values   F4 = warnings
+## Uncomment exactly ONE scheme block. All others must remain commented out.
 
-## DOT - day of the tentacle (default)
+## 1. DOT - day of the tentacle (default)
 F1=${C_GREY}
 F2=${C_PINK}
 F3=${C_LGREEN}
 F4=${C_RED}
 
-## retro hacker
+## 2. retro hacker — all green, Matrix style
 #F1=${C_GREEN}
 #F2=${C_GREEN}
 #F3=${C_GREEN}
 #F4=${C_RED}
 
-## retro alert
+## 3. retro alert — full red, high urgency
 #F1=${C_RED}
 #F2=${C_RED}
 #F3=${C_RED}
 #F4=${C_RED}
+
+## 4. ocean — cool blue/cyan, professional
+#F1=${C_CYAN}
+#F2=${C_LBLUE}
+#F3=${C_WHITE}
+#F4=${C_LRED}
+
+## 5. solarized dark — warm yellow accent on grey
+#F1=${C_GREY}
+#F2=${C_YELLOW}
+#F3=${C_LCYAN}
+#F4=${C_LRED}
+
+## 6. nord — ice blue, clean and modern
+#F1=${C_LBLUE}
+#F2=${C_LCYAN}
+#F3=${C_WHITE}
+#F4=${C_YELLOW}
+
+## 7. amber — classic CRT amber terminal
+#F1=${C_BROWN}
+#F2=${C_YELLOW}
+#F3=${C_WHITE}
+#F4=${C_LRED}
 
 
 ## root check — use id -u, not $USER (more reliable in su/sudo/cron contexts)

@@ -10,7 +10,11 @@ Dynamic Message of the Day — a single Bash script that displays system informa
 - Per-host description, environment label and SLA tag
 - Maintenance log with add/delete/list support
 - Automatic dependency installation on `--install`
+- `--update` for non-interactive binary updates (Ansible / Puppet / cron)
 - Multi-distribution support (Debian, RHEL, SUSE, Arch, Alpine families)
+- All IPv4 addresses + optional IPv6 from all active interfaces
+- Load average (1m / 5m / 15m) and realistic available memory
+- Optional Fail2Ban section (auto-hidden if fail2ban is not installed)
 - Single self-contained shell script, no external dependencies beyond coreutils
 
 ## Supported Linux Distributions
@@ -142,7 +146,9 @@ Options:
   -l | --log                    List all log entries
   -c | --config                 Reconfigure environment settings
   -i | --install                Install dynmotd and its dependencies
+  -U | --update                 Update binary only (no setup, safe for Ansible/cron)
   -u | --uninstall              Uninstall dynmotd (log deletion is optional)
+  -v | --version                Show version and exit
   -h | --help                   Show this help
 ```
 
@@ -158,6 +164,18 @@ The uninstaller asks two separate questions:
 
 System packages that were installed as dependencies are **never** removed automatically. Remove them with your package manager if desired.
 
+## Update
+
+To update an already-installed dynmotd to a newer version without running the full setup again:
+
+```bash
+cd dynmotd
+git pull
+sudo bash dynmotd.sh --update
+```
+
+`--update` only replaces the binary at `/usr/local/bin/dynmotd`. It does not ask setup questions, does not touch logs or configuration, and does not reinstall packages — safe to run from Ansible, Puppet, or a cron job.
+
 ## Configuration
 
 Edit the config block at the top of the installed script:
@@ -169,12 +187,13 @@ vim /usr/local/bin/dynmotd
 ### Enable / disable sections
 
 ```bash
-SYSTEM_INFO="1"         # system information
+SYSTEM_INFO="1"         # system information (hostname, IP, kernel, CPU, memory, load)
 STORAGE_INFO="1"        # storage / disk usage
 USER_INFO="1"           # user sessions and SSH keys
 ENVIRONMENT_INFO="1"    # environment label (function, env, SLA)
 MAINTENANCE_INFO="1"    # maintenance log entries
 UPDATE_INFO="1"         # available package updates
+FAIL2BAN_INFO="1"       # fail2ban banned IPs (auto-hidden if fail2ban is not installed)
 VERSION_INFO="1"        # version banner
 ```
 
@@ -188,24 +207,45 @@ LIST_LOG_ENTRY="2"      # number of log lines shown in the MOTD
 
 ### Color schemes
 
-Three schemes are pre-defined in the config block. Uncomment a scheme to activate it:
+Seven schemes are pre-defined. Uncomment exactly one block to activate it (`F1` = labels, `F2` = borders, `F3` = values, `F4` = warnings):
+
+| # | Name | Character |
+|---|------|-----------|
+| 1 | **DOT** *(default)* | grey labels · pink borders · green values |
+| 2 | **Retro Hacker** | all green, Matrix style |
+| 3 | **Retro Alert** | all red, maximum urgency |
+| 4 | **Ocean** | cyan/blue, cool and professional |
+| 5 | **Solarized Dark** | grey with warm yellow accent |
+| 6 | **Nord** | ice blue, clean and modern |
+| 7 | **Amber** | brown/yellow, classic CRT terminal |
+
+Example — switching to Nord:
 
 ```bash
-## DOT - day of the tentacle (default: grey / pink / green / red)
-F1=${C_GREY}; F2=${C_PINK}; F3=${C_LGREEN}; F4=${C_RED}
+vim /usr/local/bin/dynmotd
+```
 
-## retro hacker (all green)
-#F1=${C_GREEN}; F2=${C_GREEN}; F3=${C_GREEN}; F4=${C_RED}
+Comment out the active scheme and uncomment Nord:
 
-## retro alert (all red)
-#F1=${C_RED}; F2=${C_RED}; F3=${C_RED}; F4=${C_RED}
+```bash
+## 1. DOT - day of the tentacle (default)
+#F1=${C_GREY}
+#F2=${C_PINK}
+#F3=${C_LGREEN}
+#F4=${C_RED}
+
+## 6. nord — ice blue, clean and modern
+F1=${C_LBLUE}
+F2=${C_LCYAN}
+F3=${C_WHITE}
+F4=${C_YELLOW}
 ```
 
 ## Known Issues
 
-### FQDN or IP address not displayed correctly
+### Hostname not displayed correctly
 
-`hostname --fqdn` returns only the short hostname when `/etc/hostname` contains just the short name. Fix:
+The `Hostname` field uses `hostname --fqdn`. If `/etc/hostname` contains only the short name, only the short name is shown. Fix:
 
 ```bash
 hostname mail.example.com
@@ -216,6 +256,8 @@ Also check `/etc/hosts`:
 ```
 127.0.1.1  mail.example.com
 ```
+
+> **Note:** The `Address v4` / `Address v6` fields are read directly from network interfaces via `ip -brief addr show` and are not affected by hostname resolution.
 
 ### SSH key shows "- Unknown -"
 
