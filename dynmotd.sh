@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.16.0"
+VERSION="dynmotd v1.17.0"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -751,6 +751,17 @@ function show_storage_info() {
 }
 
 
+## Use getent passwd if available (includes LDAP/NIS/AD users).
+## Falls back to /etc/passwd for systems without getent (e.g. Alpine/musl).
+function _get_passwd() {
+    if command -v getent >/dev/null 2>&1; then
+        getent passwd
+    else
+        cat /etc/passwd
+    fi
+}
+
+
 ## Extract the comment field from an authorized_keys line.
 ## Uses read -ra to avoid a subshell+pipe per key.
 ## Supports: ssh-rsa, ssh-ed25519, ecdsa-sha2-*, sk-ssh-*, sk-ecdsa-*
@@ -791,7 +802,7 @@ function show_user_info() {
 
     ## System users: UID 1000–65533, interactive shell only
     mapfile -t sys_users < <(
-        awk -F: '$3 >= 1000 && $3 < 65534 && ($7 ~ /bash$|sh$/) {print $1}' /etc/passwd
+        _get_passwd | awk -F: '$3 >= 1000 && $3 < 65534 && ($7 ~ /bash$|sh$/) {print $1}'
     )
     SYSTEMUSERCOUNT=${#sys_users[@]}
     SYSTEMUSER=$(IFS=", "; echo "${sys_users[*]}" \
@@ -825,7 +836,7 @@ function show_user_info() {
                 (( KEYUSERCOUNT++ ))
             fi
         done < "$homedir/.ssh/authorized_keys"
-    done < /etc/passwd
+    done < <(_get_passwd)
 
     local KEYUSER
     KEYUSER=$(IFS=", "; echo "${keyusers[*]}" \
