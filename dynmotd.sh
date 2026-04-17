@@ -977,6 +977,14 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
 
         printf "\n${F1}  %s ${F2}(${F3}%d ${F1}IPs${F2}):\n" "$jail" "${#ips[@]}"
 
+        ## Field width = longest IP in this jail + 1 (min 1 space before =).
+        ## Guarantees = lands at the same column for every IP in the list.
+        local max_ip_len=0
+        for ip in "${ips[@]}"; do
+            (( ${#ip} > max_ip_len )) && max_ip_len=${#ip}
+        done
+        local ip_field=$(( max_ip_len + 1 ))
+
         if [ "$RESOLVEFAIL2BAN_IPS" = "1" ]; then
             ## Resolve all IPs in parallel; collect results in temp files to preserve order.
             local -a ip_tmpfiles=()
@@ -992,9 +1000,7 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
                         hostname=$(host -W 1 "$ip" 2>/dev/null \
                             | awk '/domain name pointer/ {sub(/\.$/, "", $NF); print $NF; exit}')
                     fi
-                    local pad=$(( 14 - ${#ip} ))
-                    (( pad < 1 )) && pad=1
-                    printf "${F3}   %s%*s${F2}= ${F3}%s\n" "$ip" "$pad" "" "${hostname:---}" > "$tmpf"
+                    printf "${F3}  %-${ip_field}s${F2}= ${F3}%s\n" "$ip" "${hostname:---}" > "$tmpf"
                 ) &
             done
             wait
@@ -1004,9 +1010,7 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
             done
         else
             for ip in "${ips[@]}"; do
-                local pad=$(( 14 - ${#ip} ))
-                (( pad < 1 )) && pad=1
-                printf "${F3}   %s%*s${F2}= ${F3}--\n" "$ip" "$pad" ""
+                printf "${F3}  %-${ip_field}s${F2}= ${F3}--\n" "$ip"
             done
         fi
     done
