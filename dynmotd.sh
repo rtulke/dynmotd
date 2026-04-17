@@ -941,8 +941,10 @@ function show_network_info() {
 
     printf "${F1}  %-14s %-10s %s\n" "Interface" "State" "Speed"
 
-    while IFS= read -r iface state; do
+    while read -r iface state; do
+        ## skip loopback and docker veth pairs
         [ "$iface" = "lo" ] && continue
+        [[ "$iface" == veth* ]] && continue
 
         local speed="--"
         local speed_raw
