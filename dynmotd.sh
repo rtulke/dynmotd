@@ -107,7 +107,7 @@ fi
 #### Distribution Detection
 
 ## Sets: DISTRO_ID, DISTRO_ID_LIKE, DISTRO_PRETTY
-function detect_distro() {
+function _detect_distro() {
     DISTRO_ID=""
     DISTRO_ID_LIKE=""
     DISTRO_PRETTY=""
@@ -134,7 +134,7 @@ function detect_distro() {
 
 #### Dependency Management
 
-function check_dependencies() {
+function _check_dependencies() {
     local missing_deps=()
     for cmd in grep hostname sed awk; do
         command -v "$cmd" >/dev/null 2>&1 || missing_deps+=("$cmd")
@@ -151,8 +151,8 @@ function check_dependencies() {
 
 ## Detects the distribution and installs any missing dependencies
 ## using the native package manager. Does NOT remove packages on uninstall.
-function install_dependencies() {
-    detect_distro
+function _install_dependencies() {
+    _detect_distro
     echo "Detected: ${DISTRO_PRETTY:-$DISTRO_ID}"
     echo
 
@@ -259,7 +259,7 @@ function install_dependencies() {
 
 #### Configuration helpers
 
-function createmaintenance() {
+function _createmaintenance() {
     if [ ! -f "$MAINLOG" ]; then
         mkdir -p "$DYNMOTDDIR"
         touch "$MAINLOG"
@@ -311,7 +311,7 @@ ${F1}"
 function addlog() {
     if [ ! -f "$MAINLOG" ]; then
         echo "Maintenance log not found — creating: $MAINLOG"
-        createmaintenance
+        _createmaintenance
     fi
 
     if [ -z "$1" ]; then
@@ -346,7 +346,7 @@ function rmlog() {
 function listlog() {
     if [ ! -f "$MAINLOG" ]; then
         echo "Maintenance log not found: $MAINLOG"
-        createmaintenance
+        _createmaintenance
         return
     fi
 
@@ -365,11 +365,11 @@ function install() {
     echo
 
     ## Install missing system packages for this distribution
-    install_dependencies
+    _install_dependencies
     echo
 
     ## Verify core tools are present after installation
-    check_dependencies || {
+    _check_dependencies || {
         echo "Dependency check failed. Please resolve missing packages and retry."
         return 1
     }
@@ -390,7 +390,7 @@ function install() {
 
     ## Run first-time setup if needed
     [ ! -f "$ENVFILE" ]  && { echo; createenv; }
-    [ ! -f "$MAINLOG" ]  && createmaintenance
+    [ ! -f "$MAINLOG" ]  && _createmaintenance
 
     echo
     echo "Installation complete."
@@ -605,6 +605,10 @@ function show_system_info() {
     PROCMAX=$(ulimit -u)
     [ "$PROCMAX" = "unlimited" ] && PROCMAX="∞"
 
+    local bar_width=$(( ${COLUMNS:-80} / 4 ))
+    (( bar_width < 10 )) && bar_width=10
+    (( bar_width > 30 )) && bar_width=30
+
     echo -e "
 $(_section_header "System Info")
 ${F1}        Hostname ${F2}= ${F3}${HOSTNAME}
@@ -614,8 +618,8 @@ ${F1}    Distribution ${F2}= ${F3}${DISTRIBUTION} ${PLATFORM}
 ${F1}          Uptime ${F2}= ${F3}${UPTIME}
 ${F1}    Load Average ${F2}= ${F3}${LOADAVG} ${F1}(1m 5m 15m)
 ${F1}             CPU ${F2}= ${F3}${CPUS} x ${CPUMODEL}
-${F1}          Memory ${F2}= $(_progress_bar "${MEMUSED}" "${MEMMAX}")  ${F3}${MEMAVAIL} MB free of ${MEMMAX} MB
-${F1}     Swap Memory ${F2}= $(_progress_bar "${SWAPUSED}" "${SWAPMAX}")  ${F3}${SWAPFREE} MB free of ${SWAPMAX} MB
+${F1}          Memory ${F2}= $(_progress_bar "${MEMUSED}" "${MEMMAX}" "${bar_width}")  ${F3}${MEMAVAIL} MB free of ${MEMMAX} MB
+${F1}     Swap Memory ${F2}= $(_progress_bar "${SWAPUSED}" "${SWAPMAX}" "${bar_width}")  ${F3}${SWAPFREE} MB free of ${SWAPMAX} MB
 ${F1}       Processes ${F2}= ${F3}${PROCCOUNT} of ${PROCMAX} MAX${F1}"
 }
 
@@ -717,16 +721,23 @@ function show_storage_info() {
 
     echo -e "\n$(_section_header "Storage Info")"
 
-    ## Header line — aligned with data rows (bar = 26 visible chars)
-    printf "${F1}%-26s  %-7s  %6s used of %6s  %s\n" \
+    ## Bar width scales with terminal width: COLUMNS/4, clamped to [10,30].
+    ## bar_visible = bar_width + 7  ([ + width + ] + space + 3-digit pct + %)
+    local bar_width=$(( ${COLUMNS:-80} / 4 ))
+    (( bar_width < 10 )) && bar_width=10
+    (( bar_width > 30 )) && bar_width=30
+    local bar_visible=$(( bar_width + 7 ))
+
+    ## Header line — aligned with data rows
+    printf "${F1}%-${bar_visible}s  %-7s  %6s         %6s   %s\n" \
         "Utilization" "Type" "Used" "Size" "Mount"
 
     ## Exclude virtual/overlay filesystems; extract pct + fields via awk;
     ## sort descending by usage percentage; draw one bar per filesystem.
     while IFS='|' read -r pct type size used avail mount; do
         local bar
-        bar=$(_progress_bar "$pct" "100" 20)
-        printf "%s  ${F1}%-7s${F3}  %6s used of %6s  ${F1}%s\n" \
+        bar=$(_progress_bar "$pct" "100" "$bar_width")
+        printf "%s  ${F1}%-7s${F3}  %6s used of %6s   ${F1}%s\n" \
             "$bar" "$type" "$used" "$size" "$mount"
     done < <(df -hT 2>/dev/null \
         | awk '!/docker|tmpfs|devtmpfs|squashfs|udev|overlay|shm|cgroupfs/ && NR > 1 {
@@ -930,7 +941,7 @@ ${F1}"
 
 
 function show_info() {
-    check_dependencies \
+    _check_dependencies \
         || echo "Warning: some dependencies are missing — output may be incomplete."
 
     show_system_info
