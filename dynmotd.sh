@@ -1010,7 +1010,7 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
             done
         else
             for ip in "${ips[@]}"; do
-                printf "${F3}  %-${ip_field}s${F2}= ${F3}--\n" "$ip"
+                printf "${F3} %-${ip_field}s${F2}= ${F3}--\n" "$ip"
             done
         fi
     done
