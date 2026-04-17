@@ -975,7 +975,7 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
         )
         [ ${#ips[@]} -eq 0 ] && continue
 
-        printf "\n${F1}  %s ${F2}(${F3}%d ${F1}IPs${F2}):\n" "$jail" "${#ips[@]}"
+        printf "\n${F1} %s ${F2}(${F3}%d ${F1}IPs${F2}):\n" "$jail" "${#ips[@]}"
 
         ## Field width = longest IP in this jail + 1 (min 1 space before =).
         ## Guarantees = lands at the same column for every IP in the list.
