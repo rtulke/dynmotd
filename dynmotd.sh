@@ -992,7 +992,7 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
                         hostname=$(host -W 1 "$ip" 2>/dev/null \
                             | awk '/domain name pointer/ {sub(/\.$/, "", $NF); print $NF; exit}')
                     fi
-                    printf "${F3}      %-20s ${F2}= ${F3}%s\n" "$ip" "${hostname:---}" > "$tmpf"
+                    printf "${F3}    %-12s ${F2}= ${F3}%s\n" "$ip" "${hostname:---}" > "$tmpf"
                 ) &
             done
             wait
@@ -1002,7 +1002,7 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
             done
         else
             for ip in "${ips[@]}"; do
-                printf "${F3}      %-20s ${F2}= ${F3}--\n" "$ip"
+                printf "${F3}    %-12s ${F2}= ${F3}--\n" "$ip"
             done
         fi
     done
