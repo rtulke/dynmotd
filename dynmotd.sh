@@ -737,7 +737,7 @@ function show_storage_info() {
     while IFS='|' read -r pct type size used avail mount; do
         local bar
         bar=$(_progress_bar "$pct" "100" "$bar_width")
-        printf "%s  ${F1}%-7s${F3}  %6s used of %6s   ${F1}%s\n" \
+        printf "%s  ${F1}%-7s${F3}  %6s ${F1}used of${F3} %6s   ${F1}%s\n" \
             "$bar" "$type" "$used" "$size" "$mount"
     done < <(df -hT 2>/dev/null \
         | awk '!/docker|tmpfs|devtmpfs|squashfs|udev|overlay|shm|cgroupfs/ && NR > 1 {
