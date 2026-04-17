@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.12.0"
+VERSION="dynmotd v1.13.0"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -24,6 +24,7 @@ USER_INFO="1"               # user information
 ENVIRONMENT_INFO="1"        # environment information
 MAINTENANCE_INFO="1"        # maintenance log
 UPDATE_INFO="1"             # available package updates
+FAIL2BAN_INFO="1"          # fail2ban banned IPs (only shown if fail2ban-client is installed)
 VERSION_INFO="1"            # version banner
 
 ## number of maintenance log lines shown in MAINTENANCE_INFO
@@ -371,6 +372,25 @@ function install() {
 }
 
 
+## --update: Binary aktualisieren ohne Setup-Flow (für Ansible/Puppet/cron)
+## Überschreibt nur das Binary — Logs, Config und environment.cfg bleiben erhalten.
+function update() {
+    local target="${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
+
+    if [ ! -f "$target" ]; then
+        echo "dynmotd is not installed at ${target}."
+        echo "Run: $(basename "$0") --install  for a full installation."
+        return 1
+    fi
+
+    echo -n "Updating dynmotd at ${target}... "
+    cat "$0" > "$target"
+    chmod 755 "$target"
+    echo "done."
+    echo "Version: ${VERSION}"
+}
+
+
 function uninstall() {
     local target="${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
 
@@ -449,15 +469,29 @@ function uninstall() {
 function show_system_info() {
     [ "$SYSTEM_INFO" = "1" ] || return
 
-    local HOSTNAME IP UNAME DISTRIBUTION PLATFORM UPTIME
-    local CPUS CPUMODEL MEMFREE MEMMAX SWAPFREE SWAPMAX PROCCOUNT PROCMAX
+    local HOSTNAME IPV4 IPV6 IPV6_LINE UNAME DISTRIBUTION PLATFORM UPTIME
+    local CPUS CPUMODEL LOADAVG MEMAVAIL MEMMAX SWAPFREE SWAPMAX PROCCOUNT PROCMAX
 
     HOSTNAME=$(hostname --fqdn 2>/dev/null || hostname)
 
-    ## IP: DNS lookup first, fallback to first interface address
-    IP=$(host "$HOSTNAME" 2>/dev/null | awk '/has address/{print $4; exit}')
-    [ -z "$IP" ] && IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-    [ -z "$IP" ] && IP="Unknown"
+    ## IPv4 + IPv6: alle non-loopback Adressen via iproute2, fallback auf hostname -I
+    if command -v ip >/dev/null 2>&1; then
+        IPV4=$(ip -4 -brief addr show 2>/dev/null \
+            | awk '$1 != "lo" && $2 != "DOWN" {
+                for(i=3;i<=NF;i++) { split($i,a,"/"); if(a[1]) printf "%s ", a[1] }
+              }' | xargs)
+        IPV6=$(ip -6 -brief addr show 2>/dev/null \
+            | awk '$1 != "lo" && $2 != "DOWN" {
+                for(i=3;i<=NF;i++) { split($i,a,"/"); if(a[1] !~ /^fe80/) printf "%s ", a[1] }
+              }' | xargs)
+    else
+        IPV4=$(hostname -I 2>/dev/null | awk '{print $1}')
+        IPV6=""
+    fi
+    [ -z "$IPV4" ] && IPV4="Unknown"
+    ## IPv6-Zeile nur anzeigen wenn Adressen vorhanden
+    IPV6_LINE=""
+    [ -n "$IPV6" ] && IPV6_LINE="\n${F1}      Address v6 ${F2}= ${F3}${IPV6}"
 
     UNAME=$(uname -r)
 
@@ -481,29 +515,36 @@ function show_system_info() {
     CPUS=$(grep -c processor /proc/cpuinfo)
     CPUMODEL=$(grep -m1 'model name' /proc/cpuinfo | awk -F': ' '{print $2}')
 
-    ## Read /proc/meminfo once via awk — avoids multiple greps and bc
-    read -r MEMFREE MEMMAX SWAPFREE SWAPMAX <<< "$(awk '
-        /^MemFree:/   { f=$2/1024 }
-        /^MemTotal:/  { t=$2/1024 }
-        /^SwapFree:/  { sf=$2/1024 }
-        /^SwapTotal:/ { st=$2/1024 }
-        END { printf "%.0f %.0f %.0f %.0f", f, t, sf, st }
+    ## Load Average aus /proc/loadavg (1m / 5m / 15m)
+    LOADAVG=$(awk '{print $1, $2, $3}' /proc/loadavg)
+
+    ## /proc/meminfo einmal via awk lesen — MemAvailable statt MemFree:
+    ## MemFree ist auf Linux irreführend niedrig (Kernel-Cache nicht eingerechnet).
+    ## MemAvailable zeigt den realistisch nutzbaren Speicher (seit Kernel 3.14).
+    read -r MEMAVAIL MEMMAX SWAPFREE SWAPMAX <<< "$(awk '
+        /^MemAvailable:/ { a=$2/1024 }
+        /^MemTotal:/     { t=$2/1024 }
+        /^SwapFree:/     { sf=$2/1024 }
+        /^SwapTotal:/    { st=$2/1024 }
+        END { printf "%.0f %.0f %.0f %.0f", a, t, sf, st }
     ' /proc/meminfo)"
 
     ## ps --no-headers is GNU/procps; fall back for minimal systems
     PROCCOUNT=$(ps --no-headers -eo pid 2>/dev/null | wc -l \
                 || ps -e | tail -n +2 | wc -l)
     PROCMAX=$(ulimit -u)
+    [ "$PROCMAX" = "unlimited" ] && PROCMAX="∞"
 
     echo -e "
 ${F2}============[ ${F1}System Info${F2} ]====================================================
 ${F1}        Hostname ${F2}= ${F3}${HOSTNAME}
-${F1}         Address ${F2}= ${F3}${IP}
+${F1}      Address v4 ${F2}= ${F3}${IPV4}${IPV6_LINE}
 ${F1}          Kernel ${F2}= ${F3}${UNAME}
 ${F1}    Distribution ${F2}= ${F3}${DISTRIBUTION} ${PLATFORM}
 ${F1}          Uptime ${F2}= ${F3}${UPTIME}
+${F1}    Load Average ${F2}= ${F3}${LOADAVG} ${F1}(1m 5m 15m)
 ${F1}             CPU ${F2}= ${F3}${CPUS} x ${CPUMODEL}
-${F1}          Memory ${F2}= ${F3}${MEMFREE} MB Free of ${MEMMAX} MB Total
+${F1}          Memory ${F2}= ${F3}${MEMAVAIL} MB Available of ${MEMMAX} MB Total
 ${F1}     Swap Memory ${F2}= ${F3}${SWAPFREE} MB Free of ${SWAPMAX} MB Total
 ${F1}       Processes ${F2}= ${F3}${PROCCOUNT} of ${PROCMAX} MAX${F1}"
 }
@@ -754,6 +795,45 @@ ${F4}${MAINTENANCE}${F1}"
 }
 
 
+function show_fail2ban_info() {
+    [ "$FAIL2BAN_INFO" = "1" ] || return
+    command -v fail2ban-client >/dev/null 2>&1 || return
+
+    local -a jails
+    local banned_total=0
+    local summary=""
+
+    ## Jail-Liste aus fail2ban-client status
+    mapfile -t jails < <(
+        fail2ban-client status 2>/dev/null \
+            | awk -F':\t' '/Jail list/ {print $2}' \
+            | tr ',' '\n' | tr -d ' \t' | grep -v '^$'
+    )
+
+    if [ ${#jails[@]} -eq 0 ]; then
+        echo -e "
+${F2}============[ ${F1}Fail2Ban${F2} ]=========================================================
+${F4}fail2ban is not running or no active jails${F1}"
+        return
+    fi
+
+    for jail in "${jails[@]}"; do
+        local banned
+        banned=$(fail2ban-client status "$jail" 2>/dev/null \
+            | awk '/Currently banned:/ {print $NF}')
+        banned=${banned:-0}
+        banned_total=$(( banned_total + banned ))
+        summary+="${jail}:${banned}  "
+    done
+    summary="${summary%  }"     # trailing spaces entfernen
+
+    echo -e "
+${F2}============[ ${F1}Fail2Ban${F2} ]=========================================================
+${F1}    Total Banned ${F2}= ${F3}${banned_total}
+${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
+}
+
+
 function show_version_info() {
     [ "$VERSION_INFO" = "1" ] || return
     echo -e "
@@ -772,6 +852,7 @@ function show_info() {
     show_update_info
     show_environment_info
     show_maintenance_info
+    show_fail2ban_info
     show_version_info
 }
 
@@ -799,8 +880,14 @@ case "$1" in
     -i|install|--install)
         install
     ;;
+    -U|update|--update)
+        update
+    ;;
     -u|uninstall|--uninstall)
         uninstall
+    ;;
+    -v|version|--version)
+        echo "$VERSION"
     ;;
     -h|help|--help|\?)
         echo -e "
@@ -815,7 +902,9 @@ case "$1" in
       -l | --log                    List all log entries
       -c | --config                 Reconfigure environment settings
       -i | --install                Install dynmotd and its dependencies
+      -U | --update                 Update binary only (no setup, safe for Ansible/cron)
       -u | --uninstall              Uninstall dynmotd (log deletion is optional)
+      -v | --version                Show version and exit
       -h | --help                   Show this help
     "
     ;;
