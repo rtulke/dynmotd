@@ -13,8 +13,14 @@ Dynamic Message of the Day — a single Bash script that displays system informa
 - `--update` for non-interactive binary updates (Ansible / Puppet / cron)
 - Multi-distribution support (Debian, RHEL, SUSE, Arch, Alpine families)
 - All IPv4 addresses + optional IPv6 from all active interfaces
-- Load average (1m / 5m / 15m) and realistic available memory
-- Optional Fail2Ban section (auto-hidden if fail2ban is not installed)
+- Load average (1m / 5m / 15m) and realistic available memory (`MemAvailable`)
+- Graphical utilization bars for memory, swap and disk
+- Network interface state and link speed
+- Optional Fail2Ban section — summary, per-jail IP list, parallel reverse DNS
+- Optional Failed Systemd Services section (auto-hidden when all services are healthy)
+- Parallel section rendering for fast output
+- Update count cache to avoid slow package manager queries on every login
+- LDAP / AD / NIS user support via `getent`
 - Single self-contained shell script, no external dependencies beyond coreutils
 
 ## Supported Linux Distributions
@@ -186,24 +192,62 @@ vim /usr/local/bin/dynmotd
 
 ### Enable / disable sections
 
-```bash
-SYSTEM_INFO="1"         # system information (hostname, IP, kernel, CPU, memory, load)
-STORAGE_INFO="1"        # storage / disk usage
-USER_INFO="1"           # user sessions and SSH keys
-ENVIRONMENT_INFO="1"    # environment label (function, env, SLA)
-MAINTENANCE_INFO="1"    # maintenance log entries
-UPDATE_INFO="1"         # available package updates
-FAIL2BAN_INFO="1"       # fail2ban banned IPs (auto-hidden if fail2ban is not installed)
-VERSION_INFO="1"        # version banner
-```
+Each section has an `_INFO` toggle and an optional `_ALWAYS` override:
+
+| Variable | Default | Description |
+|---|---|---|
+| `SYSTEM_INFO` | `1` | System info (hostname, IP, kernel, CPU, memory, load) |
+| `STORAGE_INFO` | `1` | Storage / disk usage with utilization bars |
+| `NETWORK_INFO` | `1` | Network interfaces — state and link speed |
+| `USER_INFO` | `1` | User sessions and SSH keys |
+| `UPDATE_INFO` | `1` | Available package updates |
+| `UPDATE_ALWAYS` | `0` | Show Update section even when `UPDATE_INFO="0"` |
+| `ENVIRONMENT_INFO` | `1` | Environment label (function, env, SLA) |
+| `FAILED_SERVICES_INFO` | `1` | Failed systemd services (auto-hidden when none failed) |
+| `FAILED_SERVICES_ALWAYS` | `0` | Always show Failed Services, even when all healthy (`= none`) |
+| `FAIL2BAN_INFO` | `1` | Fail2Ban summary — total banned + jail overview |
+| `FAIL2BAN_ALWAYS` | `0` | Always show Fail2Ban, even if not installed |
+| `SHOWFAIL2BAN_IPS` | `1` | List banned IPs per jail (no DNS, no delay) |
+| `RESOLVEFAIL2BAN_IPS` | `1` | Resolve banned IPs via reverse DNS (parallel, requires `SHOWFAIL2BAN_IPS="1"`) |
+| `MAINTENANCE_INFO` | `1` | Maintenance log entries |
+| `MAINTENANCE_ALWAYS` | `0` | Show Maintenance section even when `MAINTENANCE_INFO="0"` |
+| `WEATHER_INFO` | `1` | Weather via wttr.in (auto-hidden if curl unavailable or fetch fails) |
+| `WEATHER_ALWAYS` | `0` | Always show Weather section, even if fetch fails (`= unavailable`) |
+| `WEATHER_CITY` | *(empty)* | City for weather lookup — empty = auto-detect from server IP |
+| `WEATHER_CACHE_HOURS` | `1` | Hours before weather data is re-fetched (0 = always live) |
+| `VERSION_INFO` | `1` | Version banner |
 
 `1` = enabled, `0` = disabled.
+
+### Section display order
+
+Sections are rendered in this fixed order:
+
+1. System Info
+2. Storage Info
+3. Network Interfaces
+4. User Data
+5. Update Info
+6. Environment Data
+7. Failed Services
+8. Fail2Ban
+9. Maintenance Information
+10. Weather
+11. Version banner
 
 ### Maintenance log display
 
 ```bash
 LIST_LOG_ENTRY="2"      # number of log lines shown in the MOTD
 ```
+
+### Update cache
+
+```bash
+UPDATE_CACHE_HOURS="6"  # hours before the update count is refreshed (0 = always live)
+```
+
+The update cache avoids running a full package manager check on every login. The cached count is stored in `/root/.dynmotd/update_cache` and refreshed automatically when it expires.
 
 ### Color schemes
 
@@ -266,7 +310,3 @@ This happens when the key has no comment field. Either add a comment to the end 
 ```bash
 ssh-keygen -C "your.name@example.com"
 ```
-
-### UPDATE_INFO shows errors on non-Debian systems
-
-Set `UPDATE_INFO="0"` if you are not using a supported package manager (apt, dnf, yum, zypper, pacman).
