@@ -25,6 +25,7 @@ ENVIRONMENT_INFO="1"        # environment information
 MAINTENANCE_INFO="1"        # maintenance log
 UPDATE_INFO="1"             # available package updates
 FAIL2BAN_INFO="1"          # fail2ban banned IPs (only shown if fail2ban-client is installed)
+SHOWFAIL2BAN_IPS="1"       # show individual banned IPs + reverse DNS per jail
 NETWORK_INFO="1"            # network interface state and speed
 VERSION_INFO="1"            # version banner
 
@@ -959,6 +960,34 @@ ${F4}fail2ban is not running or no active jails${F1}"
 $(_section_header "Fail2Ban")
 ${F1}    Total Banned ${F2}= ${F3}${banned_total}
 ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
+
+    ## Optional: list banned IPs per jail with reverse DNS
+    [ "$SHOWFAIL2BAN_IPS" = "1" ] || return
+
+    for jail in "${jails[@]}"; do
+        local -a ips
+        mapfile -t ips < <(
+            fail2ban-client status "$jail" 2>/dev/null \
+                | grep 'Banned IP list:' \
+                | sed 's/.*Banned IP list:[[:space:]]*//' \
+                | tr ' ' '\n' | grep -v '^$'
+        )
+        [ ${#ips[@]} -eq 0 ] && continue
+
+        printf "\n${F1}  %s ${F2}(${F3}%d ${F1}IPs${F2}):\n" "$jail" "${#ips[@]}"
+
+        for ip in "${ips[@]}"; do
+            local hostname=""
+            if command -v getent >/dev/null 2>&1; then
+                hostname=$(getent hosts "$ip" 2>/dev/null | awk '{print $2; exit}')
+            elif command -v host >/dev/null 2>&1; then
+                hostname=$(host -W 1 "$ip" 2>/dev/null \
+                    | awk '/domain name pointer/ {sub(/\.$/, "", $NF); print $NF; exit}')
+            fi
+            printf "${F4}    %-20s${F1}%s\n" "$ip" "${hostname:---}"
+        done
+    done
+    echo -e "${F1}"
 }
 
 
