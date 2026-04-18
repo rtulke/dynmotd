@@ -216,7 +216,6 @@ Each section has an `_INFO` toggle and an optional `_ALWAYS` override:
 | `WEATHER_CITY` | *(empty)* | City for weather lookup — empty = auto-detect from server IP |
 | `WEATHER_CACHE_HOURS` | `1` | Hours before weather data is re-fetched (0 = always live) |
 | `WEATHER_UNITS` | *(empty)* | Unit system: `m` = metric, `u` = USCS, `M` = wind in m/s (empty = wttr.in default) |
-| `WEATHER_VIEW` | *(empty)* | View flags: `0` current only · `1` +1 day · `2` +2 days · `n` narrow · `q` quiet · `Q` super-quiet · `T` no colors |
 | `VERSION_INFO` | `1` | Version banner |
 
 `1` = enabled, `0` = disabled.

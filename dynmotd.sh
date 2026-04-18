@@ -38,7 +38,6 @@ WEATHER_ALWAYS="0"          # always show Weather section, even if fetch fails
 WEATHER_CITY=""             # city name for weather lookup (empty = auto-detect from IP)
 WEATHER_CACHE_HOURS="1"     # hours before weather data is refreshed (0 = always live)
 WEATHER_UNITS=""            # unit system: m=metric  u=USCS  M=wind in m/s  (empty=wttr.in default)
-WEATHER_VIEW=""             # view flags: 0=current only  1=+1day  2=+2days  n=narrow  q=quiet  Q=superquiet  T=no-colors
 VERSION_INFO="1"            # version banner
 
 ## number of maintenance log lines shown in MAINTENANCE_INFO
@@ -1136,7 +1135,6 @@ function show_weather_info() {
         local location="${WEATHER_CITY:-}"
         local url="wttr.in/${location}?format=%l|%C|%t|%f|%h|%w"
         [ -n "${WEATHER_UNITS:-}" ] && url="${url}&${WEATHER_UNITS}"
-        [ -n "${WEATHER_VIEW:-}"  ] && url="${url}&${WEATHER_VIEW}"
         weather=$(curl -s --max-time 3 "$url" 2>/dev/null)
         if [ -n "$weather" ]; then
             mkdir -p "$DYNMOTDDIR"
