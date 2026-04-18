@@ -1115,7 +1115,11 @@ function show_weather_info() {
     [ "$WEATHER_INFO" = "1" ] || [ "$WEATHER_ALWAYS" = "1" ] || return
     command -v curl >/dev/null 2>&1 || return
 
-    local cache_file="${DYNMOTDDIR}/weather_cache"
+    local cache_key
+    cache_key=$(printf '%s|%s' "${WEATHER_CITY:-}" "${WEATHER_UNITS:-}" \
+        | md5sum 2>/dev/null | awk '{print $1}')
+    [ -z "$cache_key" ] && cache_key="default"
+    local cache_file="${DYNMOTDDIR}/weather_cache_${cache_key}"
     local weather=""
 
     ## Use cached data if still within WEATHER_CACHE_HOURS
