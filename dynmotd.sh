@@ -526,7 +526,8 @@ function _section_header() {
 ## Output contains real ESC codes so it works in both echo -e and printf %s.
 ## Usage: bar=$(_progress_bar <value> <max> [width=20])
 function _progress_bar() {
-    local val=$1 max=$2 width=${3:-20}
+    ## Strip leading zeros so values like "019" aren't parsed as (invalid) octal
+    local val=$((10#${1:-0})) max=$((10#${2:-0})) width=${3:-20}
     local pct filled empty bar_filled bar_empty
 
     if (( max == 0 )); then
@@ -773,7 +774,7 @@ function show_storage_info() {
     done < <(df -hT 2>/dev/null \
         | awk '!/docker|tmpfs|devtmpfs|squashfs|udev|overlay|shm|cgroupfs/ && NR > 1 {
             pct=$6; gsub(/%/,"",pct)
-            printf "%03d|%s|%s|%s|%s|%s\n", pct,$2,$3,$4,$5,$7
+            printf "%d|%s|%s|%s|%s|%s\n", pct,$2,$3,$4,$5,$7
         }' \
         | sort -t'|' -k1 -rn)
 
