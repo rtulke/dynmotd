@@ -294,7 +294,7 @@ dynmotd remembers the state of each interactive login in `/root/.dynmotd/last_st
 
 ```json
 {
-  "version": "dynmotd v2.0.0",
+  "version": "dynmotd v2.0.1",
   "host": "web01.example.com",
   "sections": [
     { "name": "System Info", "items": [ { "label": "Hostname", "value": "web01.example.com" } ] }
@@ -667,7 +667,7 @@ CERT_FILES="/etc/ssl/private/mail.pem /opt/app/certs/*.crt"
 CERT_WARN_DAYS="20"
 ```
 
-The certificates that expire first are listed on top; with more than `CERT_MAX_LIST` certificates the rest is summarized in one line.
+A certbot certificate is listed under the name of its lineage, any other under the host name it was issued for (the common name, or the first DNS name). The certificates that expire first are listed on top; with more than `CERT_MAX_LIST` certificates the rest is summarized in one line.
 
 The backup check looks for the newest file below each path (three directory levels deep) and warns when it is too old:
 

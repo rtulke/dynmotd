@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v2.0.0"
+VERSION="dynmotd v2.0.1"
 
 ## data directory: configuration, maintenance log and caches
 DYNMOTDDIR="/root/.dynmotd"
@@ -2897,6 +2897,25 @@ function show_docker_info() {
 }
 
 
+## Prints the host name a certificate was issued for: the common name of its
+## subject, or its first DNS name when the subject is empty (as in newer
+## Let's Encrypt certificates). Prints nothing if neither can be read.
+function _cert_name() {
+    local name
+    ## "subject= /C=DE/CN=example.com" (OpenSSL 1.0) or "subject=C = DE, CN = example.com"
+    name=$(_timeout 5 openssl x509 -noout -subject -in "$1" 2>/dev/null \
+        | sed -n 's/.*CN *= *\([^,/]*\).*/\1/p')
+    if [ -z "$name" ]; then
+        name=$(_timeout 5 openssl x509 -noout -text -in "$1" 2>/dev/null \
+            | grep -o 'DNS:[^, ]*' | head -n 1)
+        name="${name#DNS:}"
+    fi
+    ## The name comes out of the certificate: host name characters only
+    name="${name//[^A-Za-z0-9.*_-]/}"
+    echo "${name:0:60}"
+}
+
+
 function show_certs_info() {
     _enabled CERT_INFO || return
 
@@ -2917,8 +2936,10 @@ function show_certs_info() {
 
     _section_ready CERT_INFO "Certificates" openssl "TLS Certificates" || return
 
-    ## Label: the directory name for generic file names (certbot: the lineage
-    ## name), otherwise the file name without its extension.
+    ## Provisional label from the path: the directory name for generic file
+    ## names (certbot: the lineage name), otherwise the file name without its
+    ## extension. Files outside certbot get the name from the certificate
+    ## itself further down, which says more than "ssl" or "cert".
     local -a labels=()
     local label field=$LABEL_WIDTH
     for f in "${files[@]}" "${missing[@]}"; do
@@ -2934,14 +2955,15 @@ function show_certs_info() {
 
     ## Reading a certificate costs an openssl and a date call. With dozens of
     ## certificates that adds up on every login, so the expiry date is cached
-    ## per file in cert_cache ("<mtime>:<path>" TAB <epoch> TAB <day>) and only
-    ## read again when the file has changed. One stat call covers all files.
+    ## per file in cert_cache ("<mtime>:<path>" TAB <epoch> TAB <day> TAB <name>)
+    ## and only read again when the file has changed. One stat call covers all
+    ## files. <name> is the host name from the certificate, "-" if not needed.
     local cache_file="${DYNMOTDDIR}/cert_cache" dirty=0
-    local -a c_keys=() c_epochs=() c_days=() mtimes=() n_lines=()
-    local key c_epoch c_day
+    local -a c_keys=() c_epochs=() c_days=() c_names=() mtimes=() n_lines=()
+    local key c_epoch c_day c_name
     if [ -f "$cache_file" ]; then
-        while IFS=$'\t' read -r key c_epoch c_day; do
-            c_keys+=("$key"); c_epochs+=("$c_epoch"); c_days+=("$c_day")
+        while IFS=$'\t' read -r key c_epoch c_day c_name; do
+            c_keys+=("$key"); c_epochs+=("$c_epoch"); c_days+=("$c_day"); c_names+=("$c_name")
         done < "$cache_file"
     fi
     (( ${#files[@]} > 0 )) && mapfile -t mtimes < <(stat -L -c '%Y' "${files[@]}" 2>/dev/null)
@@ -2950,23 +2972,29 @@ function show_certs_info() {
     ## Collect "<expiry epoch>|<warning 0/1>|<label>|<text>" per certificate.
     ## Entries without a usable date get epoch 0 and sort to the top.
     local -a entries=()
-    local i=0 n end epoch day days now
+    local i=0 n end epoch day days now name custom
     now=$(date +%s)
     for f in "${files[@]}"; do
         label="${labels[$i]}"
         key="${mtimes[$i]:-0}:${f}"
         i=$(( i + 1 ))
 
+        ## certbot lineages are already named after their domain
+        custom=1
+        [[ "$f" == /etc/letsencrypt/live/* ]] && custom=0
+
         ## Cache lookup
-        epoch=""; day=""
+        epoch=""; day=""; name=""
         if [ "${key%%:*}" != "0" ]; then
             for (( n = 0; n < ${#c_keys[@]}; n++ )); do
                 if [ "${c_keys[$n]}" = "$key" ]; then
-                    epoch="${c_epochs[$n]}"; day="${c_days[$n]}"
+                    epoch="${c_epochs[$n]}"; day="${c_days[$n]}"; name="${c_names[$n]}"
                     break
                 fi
             done
         fi
+        ## A cache entry written before names were stored has none: read again
+        (( custom )) && [ -z "$name" ] && epoch=""
 
         if ! [[ "$epoch" =~ ^[0-9]+$ ]]; then
             end=$(_timeout 5 openssl x509 -noout -enddate -in "$f" 2>/dev/null)
@@ -2975,6 +3003,10 @@ function show_certs_info() {
                 entries+=("0|1|${label}|not a readable certificate")
                 continue
             fi
+            name="-"
+            (( custom )) && name=$(_cert_name "$f")
+            [ -n "$name" ] || name="-"
+            [ "$name" != "-" ] && label="$name"
 
             ## "Mar  1 12:00:00 2027 GMT" -> epoch. GNU date parses it directly,
             ## busybox date needs the format spelled out.
@@ -2996,7 +3028,8 @@ function show_certs_info() {
             day=$(date -d "@${epoch}" +%Y-%m-%d 2>/dev/null) || day="$end"
             dirty=1
         fi
-        n_lines+=("${key}"$'\t'"${epoch}"$'\t'"${day}")
+        n_lines+=("${key}"$'\t'"${epoch}"$'\t'"${day}"$'\t'"${name:--}")
+        [ -n "$name" ] && [ "$name" != "-" ] && label="$name"
 
         days=$(( (epoch - now) / 86400 ))
         if (( epoch <= now )); then
