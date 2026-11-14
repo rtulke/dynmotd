@@ -2193,7 +2193,15 @@ function show_user_info() {
 
     ## id -un instead of $USER, which is unset or stale under su/sudo/cron
     WHOIAM=$(id -un 2>/dev/null)
-    ID=$(id)
+    ## "uid=0(root) gid=0(root) groups=0(root),1(bin),..." — the group list can
+    ## be long, so it gets its own wrapped line. LC_ALL=C keeps the keywords
+    ## in English.
+    local -a id_groups=()
+    ID=$(LC_ALL=C id 2>/dev/null)
+    if [[ "$ID" == *" groups="* ]]; then
+        IFS=',' read -ra id_groups <<< "${ID#* groups=}"
+        ID="${ID%% groups=*}"
+    fi
 
     ## One entry per user + origin: "(count) user host".
     ## The origin is the last field if it is in parentheses; its position
@@ -2227,6 +2235,8 @@ function show_user_info() {
     echo -e "\n$(_section_header "User Data")"
     printf "${F1}%17s ${F2}= ${F3}%s\n" "Your Username"   "$WHOIAM"
     printf "${F1}%17s ${F2}= ${F3}%s\n" "Your Privileges" "$ID"
+    (( ${#id_groups[@]} > 0 )) \
+        && _kv "Your Groups" "$(_wrap_list $(( LABEL_WIDTH + 3 )) "," "${id_groups[@]}")"
     _print_count_list "Current Sessions" "$SESSIONS"               "${sessions[@]}"
     _print_count_list "SystemUsers"      "${#sys_users[@]}"        "${sys_users[@]}"
     _print_count_list "SshKeyRootUsers"  "${#ssh_root_users[@]}"   "${ssh_root_users[@]}"
