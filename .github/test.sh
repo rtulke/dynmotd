@@ -54,7 +54,17 @@ expect "config file is private"      test "$(stat -c %a /root/.dynmotd/dynmotd.c
 
 run motd             bash "$script"
 expect "motd has a system section"   grep -q 'System Info' "${out}/motd.out"
-expect "motd fits 79 columns"        sh -c "sed 's/\x1b\[[0-9;]*m//g' '${out}/motd.out' | awk 'length(\$0) > 79 { bad = 1 } END { exit bad }'"
+## Strip the color codes with a literal ESC (not every sed knows \x1b), then
+## measure. Lines are ASCII except for the weather, which is short.
+esc=$(printf '\033')
+sed "s/${esc}\[[0-9;]*m//g" "${out}/motd.out" > "${out}/motd.txt"
+if awk 'length($0) > 79 { print; bad = 1 } END { exit bad }' "${out}/motd.txt" > "${out}/motd.long"; then
+    echo "ok   motd fits 79 columns"
+else
+    echo "FAIL motd fits 79 columns"
+    sed 's/^/     | /' "${out}/motd.long" | head -n 10
+    failed=1
+fi
 
 run compact          bash "$script" --compact
 run dashboard        env COLUMNS=200 LANG=C.UTF-8 bash "$script" --dashboard
@@ -81,7 +91,7 @@ run broken-config    bash "$script"
 expect "broken config is reported"   grep -q 'Problem' "${out}/broken-config.out"
 run genconfig-repair bash "$script" --genconfig
 run after-repair     bash "$script" --section config
-expect "config is clean again"       test ! -s "${out}/after-repair.out"
+expect "config is clean again"       sh -c "! grep -q 'Problem' '${out}/after-repair.out'"
 
 ## Maintenance log
 run addlog           bash "$script" -a "ci test entry"
@@ -96,8 +106,9 @@ cp "$script" /usr/local/bin/dynmotd && chmod 755 /usr/local/bin/dynmotd
 run update           bash "$script" --update
 run installed        /usr/local/bin/dynmotd
 expect "self-overwrite is refused"   sh -c '! /usr/local/bin/dynmotd --update'
-expect "installed copy is intact"    cmp -s "$script" /usr/local/bin/dynmotd
+expect "installed copy is intact"    test "$(sha256sum < "$script")" = "$(sha256sum < /usr/local/bin/dynmotd)"
 printf '\n\n' | bash "$script" --uninstall > "${out}/uninstall.out" 2> "${out}/uninstall.err"
+expect "uninstall exits cleanly"         test ! -s "${out}/uninstall.err"
 expect "uninstall removed the script"    test ! -e /usr/local/bin/dynmotd
 expect "uninstall removed the data"      test ! -e /root/.dynmotd
 

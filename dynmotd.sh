@@ -4371,10 +4371,10 @@ fi
 
 case "$1" in
     -a|addlog|--addlog)
-        addlog "$2"
+        addlog "$2" || exit 1
     ;;
     -d|rmlog|--rmlog)
-        rmlog "$2"
+        rmlog "$2" || exit 1
     ;;
     -l|log|--log|listlog|--listlog)
         listlog
@@ -4416,14 +4416,16 @@ case "$1" in
     self-update|--self-update)
         self_update || exit 1
     ;;
+    ## A failed or refused action must be visible in the exit code:
+    ## Ansible, Puppet and cron rely on it
     -i|install|--install)
-        install
+        install || exit 1
     ;;
     -U|update|--update)
-        update
+        update || exit 1
     ;;
     -u|uninstall|--uninstall)
-        uninstall
+        uninstall || exit 1
     ;;
     -v|version|--version)
         echo "$VERSION"
