@@ -68,7 +68,7 @@ jobs:
           ansi = re.compile(r"\x1b\[[0-9;]*m")
           for name, corners in (("dashboard.out", "┌│└"), ("dashboard-ascii.out", "+|")):
               rows = [ansi.sub("", line.rstrip("\n")) for line in open(out + name, encoding="utf-8")]
-              boxes = [row for row in rows if row[:1] in corners]
+              boxes = [row for row in rows if row and row[0] in corners]
               widths = sorted(set(len(row) for row in boxes))
               assert boxes, name + ": no boxes"
               assert len(widths) == 1, "%s: ragged box edges, widths %s" % (name, widths)
