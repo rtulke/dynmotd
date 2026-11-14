@@ -89,7 +89,7 @@ cd dynmotd
 1. Detects your Linux distribution
 2. Installs any missing dependencies via your native package manager
 3. Copies the script to `/usr/local/bin/dynmotd`
-4. Creates `/etc/profile.d/motd.sh` so dynmotd runs on every login
+4. Creates `/etc/profile.d/motd.sh` so dynmotd runs on every interactive login
 5. Runs first-time environment setup (function, environment label, SLA)
 
 To verify the installation, log out and back in:
@@ -182,6 +182,10 @@ sudo bash dynmotd.sh --update
 
 `--update` only replaces the binary at `/usr/local/bin/dynmotd`. It does not ask setup questions, does not touch logs or configuration, and does not reinstall packages — safe to run from Ansible, Puppet, or a cron job.
 
+Run `--install` and `--update` from the downloaded script, not from the installed binary: the installed copy cannot overwrite itself and refuses to try.
+
+> **Note:** `--install` and `--update` replace the whole script, including the config block at its top. Re-apply local changes to the config block afterwards.
+
 ## Configuration
 
 Edit the config block at the top of the installed script:
@@ -209,6 +213,7 @@ Each section has an `_INFO` toggle and an optional `_ALWAYS` override:
 | `FAIL2BAN_ALWAYS` | `0` | Always show Fail2Ban, even if not installed |
 | `SHOWFAIL2BAN_IPS` | `1` | List banned IPs per jail (no DNS, no delay) |
 | `RESOLVEFAIL2BAN_IPS` | `1` | Resolve banned IPs via reverse DNS (parallel, requires `SHOWFAIL2BAN_IPS="1"`) |
+| `FAIL2BAN_MAX_IPS` | `10` | Maximum number of banned IPs listed per jail (`0` = no limit) |
 | `MAINTENANCE_INFO` | `1` | Maintenance log entries |
 | `MAINTENANCE_ALWAYS` | `0` | Show Maintenance section even when `MAINTENANCE_INFO="0"` |
 | `WEATHER_INFO` | `1` | Weather via wttr.in (auto-hidden if curl unavailable or fetch fails) |
@@ -248,7 +253,7 @@ LIST_LOG_ENTRY="2"      # number of log lines shown in the MOTD
 UPDATE_CACHE_HOURS="6"  # hours before the update count is refreshed (0 = always live)
 ```
 
-The update cache avoids running a full package manager check on every login. The cached count is stored in `/root/.dynmotd/update_cache` and refreshed automatically when it expires.
+The update cache avoids running a full package manager check on every login. It applies to all supported package managers. The cached count is stored in `/root/.dynmotd/update_cache` and refreshed automatically when it expires; on Debian-based systems it is also refreshed as soon as packages have been installed or removed. A failed query (package manager locked, repository unreachable) is shown as `Unknown` and never cached.
 
 ### Color schemes
 

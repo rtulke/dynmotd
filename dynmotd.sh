@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.18.0"
+VERSION="dynmotd v1.19.1"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -30,6 +30,7 @@ UPDATE_ALWAYS="0"          # always show Update section, even if UPDATE_INFO="0"
 MAINTENANCE_ALWAYS="0"     # always show Maintenance section, even if MAINTENANCE_INFO="0"
 SHOWFAIL2BAN_IPS="1"       # show individual banned IPs per jail (no DNS)
 RESOLVEFAIL2BAN_IPS="1"    # resolve banned IPs via DNS (requires SHOWFAIL2BAN_IPS="1")
+FAIL2BAN_MAX_IPS="10"      # max banned IPs listed per jail (0 = no limit)
 FAILED_SERVICES_INFO="1"    # failed systemd services (auto-hidden if none failed)
 FAILED_SERVICES_ALWAYS="0"  # always show Failed Services section, even when none failed
 NETWORK_INFO="1"            # network interface state and speed
@@ -43,7 +44,7 @@ VERSION_INFO="1"            # version banner
 ## number of maintenance log lines shown in MAINTENANCE_INFO
 LIST_LOG_ENTRY="2"
 
-## hours before the apt update count cache is refreshed (0 = always live)
+## hours before the cached update count is refreshed (0 = always live)
 UPDATE_CACHE_HOURS="6"
 
 
@@ -186,7 +187,7 @@ function _install_dependencies() {
             is_rhel=true ;;
         fedora)
             is_fedora=true ;;
-        opensuse*|sles|sled|opensuse-leap|opensuse-tumbleweed)
+        opensuse*|sles|sled)
             is_suse=true ;;
         arch|manjaro|endeavouros|garuda|artix|cachyos|blackarch)
             is_arch=true ;;
@@ -273,6 +274,94 @@ function _install_dependencies() {
 }
 
 
+#### Generic helpers
+
+## Runs an external command with a time limit when `timeout` is available, so a
+## hanging tool (stale NFS mount, unresponsive daemon, slow DNS) cannot block
+## the login. Does not work for shell functions.
+## Usage: _timeout <seconds> <command> [args...]
+function _timeout() {
+    local secs="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$secs" "$@"
+    else
+        "$@"
+    fi
+}
+
+
+## Prints <value> as a base-10 integer, or <default> if it is not a plain
+## non-negative number. Leading zeros are stripped ("038" would otherwise be
+## parsed as invalid octal in shell arithmetic).
+## Usage: VAR=$(_to_int "$VAR" <default>)
+function _to_int() {
+    local v="${1:-}"
+    [[ "$v" =~ ^[0-9]{1,9}$ ]] || v="${2:-0}"
+    echo $(( 10#$v ))
+}
+
+
+## Normalizes numeric settings so a typo in the config block cannot break
+## arithmetic later on.
+function _sanitize_config() {
+    LIST_LOG_ENTRY=$(_to_int "$LIST_LOG_ENTRY" 2)
+    UPDATE_CACHE_HOURS=$(_to_int "$UPDATE_CACHE_HOURS" 6)
+    WEATHER_CACHE_HOURS=$(_to_int "$WEATHER_CACHE_HOURS" 1)
+    FAIL2BAN_MAX_IPS=$(_to_int "$FAIL2BAN_MAX_IPS" 10)
+}
+
+
+## Prints the age of a file in seconds (very large if the file is unreadable).
+function _file_age() {
+    local mtime
+    mtime=$(stat -c %Y "$1" 2>/dev/null)
+    [[ "$mtime" =~ ^[0-9]+$ ]] || mtime=0
+    echo $(( $(date +%s) - mtime ))
+}
+
+
+## Writes a single line to a cache file atomically (temp file + rename), so
+## parallel logins never read a half-written cache.
+## Usage: _write_cache <file> <content>
+function _write_cache() {
+    local file="$1" tmp
+    mkdir -p "$DYNMOTDDIR" 2>/dev/null || return 1
+    tmp=$(mktemp "${file}.XXXXXX" 2>/dev/null) || return 1
+    if printf '%s\n' "$2" > "$tmp" && mv -f "$tmp" "$file"; then
+        return 0
+    fi
+    rm -f "$tmp"
+    return 1
+}
+
+
+## Joins items and wraps the result so no line exceeds 79 columns.
+## The first line is assumed to start at column <indent>; continuation lines
+## are indented by <indent> spaces. <separator> is appended to every item
+## except the last ("," or "").
+## Usage: _wrap_list <indent> <separator> item...
+function _wrap_list() {
+    local indent="$1" sep="$2"; shift 2
+    local width=79 out="" col=0 item pad first=1
+    pad=$(printf '%*s' "$indent" '')
+
+    for item in "$@"; do
+        if (( first )); then
+            out="$item"
+            col=$(( indent + ${#item} ))
+            first=0
+        elif (( col + ${#sep} + 1 + ${#item} > width )); then
+            out+="${sep}"$'\n'"${pad}${item}"
+            col=$(( indent + ${#item} ))
+        else
+            out+="${sep} ${item}"
+            col=$(( col + ${#sep} + 1 + ${#item} ))
+        fi
+    done
+    printf '%s' "$out"
+}
+
+
 #### Configuration helpers
 
 function _createmaintenance() {
@@ -286,8 +375,25 @@ function _createmaintenance() {
 }
 
 
+## Loads SYSFUNCTION / SYSENV / SYSSLA from environment.cfg.
+## Returns: 0 = loaded, 1 = missing or incomplete, 2 = not owned by root (not sourced)
+function _load_env() {
+    [ -f "$ENVFILE" ] || return 1
+
+    ## Safety: only source the file if root owns it
+    local owner
+    owner=$(stat -c '%U' "$ENVFILE" 2>/dev/null)
+    [ "$owner" = "root" ] || return 2
+
+    # shellcheck source=/dev/null
+    source "$ENVFILE" 2>/dev/null
+    [ -n "${SYSFUNCTION:-}" ] && [ -n "${SYSENV:-}" ] && [ -n "${SYSSLA:-}" ]
+}
+
+
 function createenv() {
     ## Show current values as defaults when reconfiguring
+    _load_env
     local cur_func="${SYSFUNCTION:-Unset}"
     local cur_env="${SYSENV:-DEV}"
     local cur_sla="${SYSSLA:-None}"
@@ -309,13 +415,18 @@ ${F1}"
     SYSENV="${SYSENV:-$cur_env}"
     SYSSLA="${SYSSLA:-$cur_sla}"
 
+    ## %q quotes the values for the shell: the file is sourced as root, so
+    ## input containing quotes, $ or backticks must not be able to run code.
     mkdir -p "$DYNMOTDDIR"
     rm -f "$ENVFILE"
-    touch "$ENVFILE"
-    chmod 600 "$ENVFILE"
-    printf 'SYSFUNCTION="%s"\n' "$SYSFUNCTION" >> "$ENVFILE"
-    printf 'SYSENV="%s"\n'      "$SYSENV"      >> "$ENVFILE"
-    printf 'SYSSLA="%s"\n'      "$SYSSLA"      >> "$ENVFILE"
+    (
+        umask 077
+        {
+            printf 'SYSFUNCTION=%q\n' "$SYSFUNCTION"
+            printf 'SYSENV=%q\n'      "$SYSENV"
+            printf 'SYSSLA=%q\n'      "$SYSSLA"
+        } > "$ENVFILE"
+    ) || { echo "Error: could not write $ENVFILE"; return 1; }
 
     echo
     echo "Configuration saved to $ENVFILE"
@@ -337,7 +448,8 @@ function addlog() {
 
     local mydate
     mydate=$(date +"%b %d %H:%M:%S")
-    printf '%s %s\n' "$mydate" "${1//[$'\n\r']/}" >> "$MAINLOG"
+    printf '%s %s\n' "$mydate" "${1//[$'\n\r']/}" >> "$MAINLOG" \
+        || { echo "Error: could not write to $MAINLOG"; exit 1; }
     echo "Log entry added."
 }
 
@@ -348,14 +460,30 @@ function rmlog() {
         exit 1
     fi
 
-    if ! [[ "$1" =~ ^[0-9]+$ ]]; then
+    if ! [[ "$1" =~ ^[0-9]{1,9}$ ]]; then
         echo "Error: '$1' is not a valid line number."
         exit 1
     fi
 
-    sed -i "${1}d" "$MAINLOG"
-    local rc=$?
-    [ $rc -eq 0 ] && echo "Line $1 deleted." || { echo "Error deleting line $1."; exit $rc; }
+    if [ ! -f "$MAINLOG" ]; then
+        echo "Maintenance log not found: $MAINLOG"
+        exit 1
+    fi
+
+    local line total
+    line=$(( 10#$1 ))
+    total=$(grep -c '' "$MAINLOG")
+    if (( line < 1 || line > total )); then
+        echo "Error: line $line does not exist (log has $total entries)."
+        exit 1
+    fi
+
+    if sed -i "${line}d" "$MAINLOG"; then
+        echo "Line $line deleted."
+    else
+        echo "Error deleting line $line."
+        exit 1
+    fi
 }
 
 
@@ -366,15 +494,54 @@ function listlog() {
         return
     fi
 
-    local count=1
-    while read -r line; do
-        echo -e "${F2}${count} ${F1}${line}${F2}"
-        (( count++ ))
+    ## printf %s keeps backslashes in log entries literal;
+    ## "|| [ -n ]" also prints a last line that has no trailing newline.
+    local count=1 line
+    while IFS= read -r line || [ -n "$line" ]; do
+        printf "${F2}%s ${F1}%s\n" "$count" "$line"
+        count=$(( count + 1 ))
     done < "$MAINLOG"
 }
 
 
 #### Install / Uninstall
+
+## Copies the running script to <target> via temp file + rename, so a failed
+## or interrupted copy never leaves a truncated binary behind.
+function _copy_self() {
+    local target="$1" tmp
+
+    if [ ! -f "$0" ] || [ ! -r "$0" ]; then
+        echo "failed."
+        echo "Error: cannot read the script source '$0'."
+        echo "Run it from a file (bash dynmotd.sh ...), not through a pipe."
+        return 1
+    fi
+
+    ## cat "$0" > "$target" on the same file would truncate it to zero bytes
+    if [ "$0" -ef "$target" ]; then
+        echo "skipped."
+        echo "Source and target are the same file: ${target}"
+        echo "Run this from the downloaded script instead, e.g.: bash dynmotd.sh --update"
+        return 1
+    fi
+
+    mkdir -p "$(dirname "$target")" 2>/dev/null
+    tmp=$(mktemp "${target}.XXXXXX" 2>/dev/null) || {
+        echo "failed."
+        echo "Error: cannot write to $(dirname "$target")."
+        return 1
+    }
+
+    if cat "$0" > "$tmp" && chmod 755 "$tmp" && mv -f "$tmp" "$target"; then
+        return 0
+    fi
+    rm -f "$tmp"
+    echo "failed."
+    echo "Error: could not install ${target}."
+    return 1
+}
+
 
 function install() {
     echo -e "$(_section_header "Installing dynmotd")${F1}"
@@ -392,16 +559,25 @@ function install() {
 
     local target="${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
 
-    if [ -f "$target" ]; then
+    if [ -f "$target" ] && [ ! "$0" -ef "$target" ]; then
         echo -n "dynmotd is already installed at ${target}. Overwrite? [Y/n]: "
         read -r OPT
         [[ "$OPT" =~ ^[Nn]$ ]] && { echo "Nothing to do."; return 0; }
     fi
 
     echo -n "Installing to ${target}... "
-    cat "$0" > "$target"
-    chmod 755 "$target"
-    echo "$target" > "$DYNMOTD_PROFILE"
+    _copy_self "$target" || return 1
+
+    ## Profile hook: run only for interactive shells, so non-interactive login
+    ## shells (bash -lc from cron, Ansible, ...) do not get the MOTD mixed
+    ## into their output.
+    mkdir -p "$(dirname "$DYNMOTD_PROFILE")" 2>/dev/null
+    cat > "$DYNMOTD_PROFILE" <<EOF
+# dynmotd: show the dynamic MOTD for interactive login shells
+case "\$-" in
+    *i*) [ -x "${target}" ] && "${target}" ;;
+esac
+EOF
     echo "done."
 
     ## Run first-time setup if needed
@@ -426,8 +602,7 @@ function update() {
     fi
 
     echo -n "Updating dynmotd at ${target}... "
-    cat "$0" > "$target"
-    chmod 755 "$target"
+    _copy_self "$target" || return 1
     echo "done."
     echo "Version: ${VERSION}"
 }
@@ -461,7 +636,7 @@ function uninstall() {
     if [ -d "$DYNMOTDDIR" ]; then
         echo
         echo "Data directory: ${DYNMOTDDIR}/"
-        [ -f "$MAINLOG" ] && echo "  maintenance.log  ($(wc -l < "$MAINLOG") entries)"
+        [ -f "$MAINLOG" ] && echo "  maintenance.log  ($(grep -c '' "$MAINLOG") entries)"
         [ -f "$ENVFILE" ]  && echo "  environment.cfg"
         echo
         echo -n "Also delete logs and configuration in ${DYNMOTDDIR}/? [y/N]: "
@@ -482,16 +657,20 @@ function uninstall() {
 
     ## Remove binary and profile hook
     for f in "${remove_files[@]}"; do
-        rm -f "$f" \
-            && echo "Removed: $f" \
-            || echo "Error: could not remove $f"
+        if rm -f "$f"; then
+            echo "Removed: $f"
+        else
+            echo "Error: could not remove $f"
+        fi
     done
 
     ## Remove data directory only if explicitly confirmed
     if $remove_data; then
-        rm -rf "$DYNMOTDDIR" \
-            && echo "Removed: ${DYNMOTDDIR}/" \
-            || echo "Error: could not remove ${DYNMOTDDIR}/"
+        if rm -rf "$DYNMOTDDIR"; then
+            echo "Removed: ${DYNMOTDDIR}/"
+        else
+            echo "Error: could not remove ${DYNMOTDDIR}/"
+        fi
     else
         echo
         [ -d "$DYNMOTDDIR" ] && echo "Data preserved: ${DYNMOTDDIR}/"
@@ -515,32 +694,40 @@ function uninstall() {
 function _section_header() {
     local label="$1"
     local trail=$(( 63 - ${#label} ))
+    (( trail < 0 )) && trail=0
     local padding
     padding=$(printf '%*s' "$trail" '' | tr ' ' '=')
     printf '%s' "${F2}============[ ${F1}${label}${F2} ]${padding}"
 }
 
 
+## Bar width scales with terminal width: COLUMNS/4, clamped to [10,30].
+function _bar_width() {
+    local width=$(( $(_to_int "${COLUMNS:-}" 80) / 4 ))
+    (( width < 10 )) && width=10
+    (( width > 30 )) && width=30
+    echo "$width"
+}
+
+
 ## Renders a progress bar using the active color scheme.
-## F3 = filled blocks (█)   F1 = empty blocks (░)   F2 = brackets [ ]
+## F3 = filled blocks (#)   F1 = empty blocks (-)   F2 = brackets [ ]
 ## Output contains real ESC codes so it works in both echo -e and printf %s.
+## Visible width is always <width> + 7, also for empty or invalid input.
 ## Usage: bar=$(_progress_bar <value> <max> [width=20])
 function _progress_bar() {
-    ## Strip leading zeros so values like "019" aren't parsed as (invalid) octal
-    local val=$((10#${1:-0})) max=$((10#${2:-0})) width=${3:-20}
-    local pct filled empty bar_filled bar_empty
+    ## _to_int strips leading zeros and maps non-numeric input (e.g. "-") to 0
+    local val max width
+    val=$(_to_int "${1:-}" 0)
+    max=$(_to_int "${2:-}" 0)
+    width=$(_to_int "${3:-}" 20)
+    local pct=0 filled=0 empty bar_filled bar_empty
 
-    if (( max == 0 )); then
-        local empty_bar
-        empty_bar=$(printf '%*s' "$width" '' | tr ' ' '-')
-        printf "${F2}[${F1}%s${F2}]${F3}  0%%" "$empty_bar"
-        return
+    if (( max > 0 )); then
+        (( val > max )) && val=$max
+        pct=$(( val * 100 / max ))
+        filled=$(( val * width / max ))
     fi
-
-    pct=$(( val * 100 / max ))
-    (( pct   > 100   )) && pct=100
-    filled=$(( val * width / max ))
-    (( filled > width )) && filled=$width
     empty=$(( width - filled ))
 
     bar_filled=$(printf '%*s' "$filled" '' | tr ' ' '#')
@@ -557,7 +744,10 @@ function show_system_info() {
     local HOSTNAME IPV4 IPV6 IPV6_LINE UNAME DISTRIBUTION PLATFORM UPTIME
     local CPUS CPUMODEL LOADAVG MEMAVAIL MEMMAX MEMUSED SWAPFREE SWAPMAX SWAPUSED PROCCOUNT PROCMAX
 
-    HOSTNAME=$(hostname --fqdn 2>/dev/null || hostname)
+    ## hostname --fqdn does a DNS lookup and can hang when the resolver is down
+    HOSTNAME=$(_timeout 2 hostname --fqdn 2>/dev/null)
+    [ -n "$HOSTNAME" ] || HOSTNAME=$(hostname 2>/dev/null)
+    [ -n "$HOSTNAME" ] || HOSTNAME="Unknown"
 
     ## IPv4 + IPv6: all non-loopback addresses via iproute2, fallback to hostname -I
     if command -v ip >/dev/null 2>&1; then
@@ -580,16 +770,19 @@ function show_system_info() {
 
     UNAME=$(uname -r)
 
-    ## Distribution: lsb_release → /etc/os-release → /etc/redhat-release
-    if command -v lsb_release >/dev/null 2>&1; then
-        DISTRIBUTION=$(lsb_release -s -d)
-    elif [ -f /etc/os-release ]; then
-        DISTRIBUTION=$(grep -m1 'PRETTY_NAME' /etc/os-release | cut -d= -f2 | tr -d '"')
-    elif [ -f /etc/redhat-release ]; then
-        DISTRIBUTION=$(< /etc/redhat-release)
-    else
-        DISTRIBUTION="Unknown Distribution"
+    ## Distribution: /etc/os-release → lsb_release → /etc/redhat-release
+    ## (os-release first: lsb_release starts a Python interpreter on every login)
+    DISTRIBUTION=""
+    if [ -f /etc/os-release ]; then
+        DISTRIBUTION=$(grep -m1 '^PRETTY_NAME=' /etc/os-release | cut -d= -f2- | tr -d '"')
     fi
+    if [ -z "$DISTRIBUTION" ] && command -v lsb_release >/dev/null 2>&1; then
+        DISTRIBUTION=$(lsb_release -s -d 2>/dev/null | tr -d '"')
+    fi
+    if [ -z "$DISTRIBUTION" ] && [ -f /etc/redhat-release ]; then
+        DISTRIBUTION=$(< /etc/redhat-release)
+    fi
+    [ -n "$DISTRIBUTION" ] || DISTRIBUTION="Unknown Distribution"
 
     PLATFORM=$(uname -m)
 
@@ -597,34 +790,62 @@ function show_system_info() {
     UPTIME=$(uptime -p 2>/dev/null) \
         || UPTIME=$(uptime | awk -F'up ' '{print $2}' | cut -d, -f1,2 | xargs)
 
-    CPUS=$(grep -c processor /proc/cpuinfo)
-    CPUMODEL=$(grep -m1 'model name' /proc/cpuinfo | awk -F': ' '{print $2}')
+    CPUS=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null)
+    [[ "$CPUS" =~ ^[1-9][0-9]*$ ]] || CPUS=$(nproc 2>/dev/null)
+    [[ "$CPUS" =~ ^[1-9][0-9]*$ ]] || CPUS=1
+
+    ## x86 has "model name" in /proc/cpuinfo; ARM, RISC-V and s390x do not.
+    ## Ask lscpu there and fall back to the machine architecture.
+    CPUMODEL=$(awk -F': *' '/^model name/ {print $2; exit}' /proc/cpuinfo 2>/dev/null)
+    if [ -z "$CPUMODEL" ] && command -v lscpu >/dev/null 2>&1; then
+        CPUMODEL=$(_timeout 2 env LC_ALL=C lscpu 2>/dev/null \
+            | awk -F': +' '/^Model name/ {print $2; exit}')
+    fi
+    if [ -z "$CPUMODEL" ] || [ "$CPUMODEL" = "-" ]; then
+        CPUMODEL="$PLATFORM"
+    fi
 
     ## Load average from /proc/loadavg (1m / 5m / 15m)
-    LOADAVG=$(awk '{print $1, $2, $3}' /proc/loadavg)
+    LOADAVG=$(awk '{print $1, $2, $3}' /proc/loadavg 2>/dev/null)
 
     ## Read /proc/meminfo once via awk — MemAvailable instead of MemFree:
     ## MemFree is misleadingly low on Linux (kernel cache not counted as free).
-    ## MemAvailable shows realistic usable memory (available since kernel 3.14).
+    ## MemAvailable shows realistic usable memory (available since kernel 3.14);
+    ## older kernels get the classic MemFree + Buffers + Cached estimate.
     read -r MEMAVAIL MEMMAX SWAPFREE SWAPMAX <<< "$(awk '
-        /^MemAvailable:/ { a=$2/1024 }
+        /^MemAvailable:/ { a=$2/1024; has_a=1 }
+        /^MemFree:/      { f=$2/1024 }
+        /^Buffers:/      { b=$2/1024 }
+        /^Cached:/       { c=$2/1024 }
         /^MemTotal:/     { t=$2/1024 }
         /^SwapFree:/     { sf=$2/1024 }
         /^SwapTotal:/    { st=$2/1024 }
-        END { printf "%.0f %.0f %.0f %.0f", a, t, sf, st }
-    ' /proc/meminfo)"
+        END {
+            if (!has_a) a = f + b + c
+            printf "%.0f %.0f %.0f %.0f", a, t, sf, st
+        }
+    ' /proc/meminfo 2>/dev/null)"
+    MEMAVAIL=$(_to_int "$MEMAVAIL" 0)
+    MEMMAX=$(_to_int "$MEMMAX" 0)
+    SWAPFREE=$(_to_int "$SWAPFREE" 0)
+    SWAPMAX=$(_to_int "$SWAPMAX" 0)
     MEMUSED=$(( MEMMAX - MEMAVAIL ))
     SWAPUSED=$(( SWAPMAX - SWAPFREE ))
+    (( MEMUSED  < 0 )) && MEMUSED=0
+    (( SWAPUSED < 0 )) && SWAPUSED=0
 
     ## ps --no-headers is GNU/procps; fall back for minimal systems
-    PROCCOUNT=$(ps --no-headers -eo pid 2>/dev/null | wc -l \
-                || ps -e | tail -n +2 | wc -l)
+    PROCCOUNT=$(ps --no-headers -eo pid 2>/dev/null | wc -l)
+    PROCCOUNT=$(_to_int "${PROCCOUNT//[[:space:]]/}" 0)
+    if (( PROCCOUNT == 0 )); then
+        PROCCOUNT=$(ps -e 2>/dev/null | tail -n +2 | wc -l)
+        PROCCOUNT=$(_to_int "${PROCCOUNT//[[:space:]]/}" 0)
+    fi
     PROCMAX=$(ulimit -u)
     [ "$PROCMAX" = "unlimited" ] && PROCMAX="∞"
 
-    local bar_width=$(( ${COLUMNS:-80} / 4 ))
-    (( bar_width < 10 )) && bar_width=10
-    (( bar_width > 30 )) && bar_width=30
+    local bar_width
+    bar_width=$(_bar_width)
 
     echo -e "
 $(_section_header "System Info")
@@ -641,104 +862,147 @@ ${F1}       Processes ${F2}= ${F3}${PROCCOUNT} of ${PROCMAX} MAX${F1}"
 }
 
 
+## Prints the name of the first package manager found, in detection order.
+function _pkg_manager() {
+    local mgr
+    for mgr in apt-get dnf yum zypper pacman apk; do
+        if command -v "$mgr" >/dev/null 2>&1; then
+            echo "$mgr"
+            return 0
+        fi
+    done
+    return 1
+}
+
+
+## Prints the number of pending package updates for <package-manager>.
+## Returns 1 without output if the count could not be determined (lock held,
+## timeout, repository error), so a failed query is never shown or cached as 0.
+## LC_ALL=C keeps the tool output parseable on non-English systems.
+function _count_updates() {
+    local out rc
+    case "$1" in
+        apt-get)
+            out=$(_timeout 30 env LC_ALL=C apt-get -s -qq dist-upgrade 2>/dev/null) || return 1
+            grep -c '^Inst' <<< "$out"
+            ;;
+        dnf|yum)
+            ## check-update exit codes: 0 = no updates, 100 = updates, other = error
+            out=$(_timeout 60 env LC_ALL=C "$1" check-update -q 2>/dev/null)
+            rc=$?
+            (( rc == 0 || rc == 100 )) || return 1
+            ## Count package lines only; stop at the "Obsoleting Packages" list
+            awk '/^Obsoleting/ { exit }
+                 /^[A-Za-z0-9]/ && !/^Last|^Loaded|^Loading|^Updated|^Security/ { c++ }
+                 END { print c+0 }' <<< "$out"
+            ;;
+        zypper)
+            ## Table rows of available updates start with the status column "v"
+            out=$(_timeout 60 env LC_ALL=C zypper --non-interactive list-updates 2>/dev/null) || return 1
+            grep -c '^v[[:space:]]*|' <<< "$out"
+            ;;
+        pacman)
+            ## pacman -Qu exits 1 when there is nothing to update
+            out=$(pacman -Qu 2>/dev/null)
+            grep -c . <<< "$out"
+            ;;
+        apk)
+            out=$(_timeout 30 apk list --upgradeable 2>/dev/null) || return 1
+            grep -c . <<< "$out"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+
 function show_update_info() {
     [ "$UPDATE_INFO" = "1" ] || [ "$UPDATE_ALWAYS" = "1" ] || return
 
     local UPDATES="Unknown"
     local REBOOT_REQUIRED="Unknown"
     local REBOOT_PACKAGES="N/A"
+    local mgr
+    mgr=$(_pkg_manager)
 
-    if command -v apt-get >/dev/null 2>&1; then
-        ## Cache apt update count to avoid running apt-get -s on every login (1–3 sec).
-        ## Cache file is refreshed when older than UPDATE_CACHE_HOURS hours.
+    if [ -n "$mgr" ]; then
+        ## Cache the update count: querying the package manager takes 1–3 sec
+        ## (apt) up to much longer (dnf/zypper) on every login.
+        ## The cache is refreshed when older than UPDATE_CACHE_HOURS hours, or
+        ## when dpkg has installed/removed packages since it was written.
         local cache_file="${DYNMOTDDIR}/update_cache"
-        local needs_refresh=true
-        if [ -f "$cache_file" ]; then
-            local cache_mtime cache_age
-            cache_mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
-            cache_age=$(( $(date +%s) - cache_mtime ))
-            (( cache_age < UPDATE_CACHE_HOURS * 3600 )) && needs_refresh=false
-        fi
-        if $needs_refresh; then
-            UPDATES=$(apt-get -s -qq dist-upgrade 2>/dev/null | grep -c '^Inst')
-            UPDATES=${UPDATES:-0}
-            mkdir -p "$DYNMOTDDIR"
-            echo "$UPDATES" > "$cache_file"
-        else
-            UPDATES=$(< "$cache_file")
+        local cached="" count=""
+
+        if (( UPDATE_CACHE_HOURS > 0 )) && [ -f "$cache_file" ] \
+            && (( $(_file_age "$cache_file") < UPDATE_CACHE_HOURS * 3600 )) \
+            && [ ! /var/lib/dpkg/status -nt "$cache_file" ]; then
+            read -r cached < "$cache_file"
+            [[ "$cached" =~ ^[0-9]+$ ]] && UPDATES="$cached"
         fi
 
-        if [ -f /var/run/reboot-required ]; then
-            REBOOT_REQUIRED="Yes"
-            if [ -f /var/run/reboot-required.pkgs ]; then
-                local raw_packages formatted_packages="" line_length=0
-                raw_packages=$(< /var/run/reboot-required.pkgs)
-                for pkg in $raw_packages; do
-                    local pkg_length=${#pkg}
-                    if [ $line_length -eq 0 ]; then
-                        formatted_packages+="$pkg"
-                        line_length=$pkg_length
-                    elif [ $((line_length + pkg_length + 1)) -le 80 ]; then
-                        formatted_packages+=" $pkg"
-                        line_length=$((line_length + pkg_length + 1))
-                    else
-                        formatted_packages+="\n                    $pkg"
-                        line_length=$((pkg_length + 20))
-                    fi
-                done
-                REBOOT_PACKAGES="$formatted_packages"
-            else
-                REBOOT_PACKAGES="(unknown)"
+        if [ "$UPDATES" = "Unknown" ]; then
+            if count=$(_count_updates "$mgr") && [[ "$count" =~ ^[0-9]+$ ]]; then
+                UPDATES="$count"
+                _write_cache "$cache_file" "$count"
             fi
-        else
-            REBOOT_REQUIRED="No"
-            REBOOT_PACKAGES="-"
         fi
-
-    elif command -v dnf >/dev/null 2>&1; then
-        ## Filter out dnf header/metadata lines; count only actual package lines
-        UPDATES=$(dnf check-update -q 2>/dev/null \
-            | awk '/^[A-Za-z0-9]/ && !/^Last|^Loaded|^Loading|^Updated/ {c++} END {print c+0}')
-        ## needs-restarting -r exits 1 if reboot needed
-        if command -v needs-restarting >/dev/null 2>&1; then
-            needs-restarting -r >/dev/null 2>&1 \
-                && REBOOT_REQUIRED="No" || REBOOT_REQUIRED="Yes"
-        else
-            REBOOT_REQUIRED=$([ -f /var/run/reboot-required ] && echo "Yes" || echo "No")
-        fi
-
-    elif command -v yum >/dev/null 2>&1; then
-        UPDATES=$(yum check-update -q 2>/dev/null \
-            | awk '/^[A-Za-z0-9]/ && !/^Last|^Loaded|^Loading|^Updated/ {c++} END {print c+0}')
-        ## needs-restarting -r exits 1 if reboot needed (same tool as dnf)
-        if command -v needs-restarting >/dev/null 2>&1; then
-            needs-restarting -r >/dev/null 2>&1 \
-                && REBOOT_REQUIRED="No" || REBOOT_REQUIRED="Yes"
-        else
-            REBOOT_REQUIRED="Unknown"
-        fi
-
-    elif command -v zypper >/dev/null 2>&1; then
-        ## zypper list-updates: count lines starting with "|" (table rows)
-        UPDATES=$(zypper list-updates 2>/dev/null | grep -c '^|')
-        UPDATES=${UPDATES:-0}
-        zypper needs-rebooting >/dev/null 2>&1 \
-            && REBOOT_REQUIRED="No" || REBOOT_REQUIRED="Yes"
-
-    elif command -v pacman >/dev/null 2>&1; then
-        UPDATES=$(pacman -Qu 2>/dev/null | wc -l)
-        ## If the running kernel's module directory is no longer owned by any
-        ## installed package, the kernel was upgraded and a reboot is needed.
-        if pacman -Qo "/lib/modules/$(uname -r)" >/dev/null 2>&1; then
-            REBOOT_REQUIRED="No"
-        else
-            REBOOT_REQUIRED="Yes"
-        fi
-
-    elif command -v apk >/dev/null 2>&1; then
-        UPDATES=$(apk list --upgradeable 2>/dev/null | wc -l)
-        REBOOT_REQUIRED=$([ -f /var/run/reboot-required ] && echo "Yes" || echo "No")
     fi
+
+    case "$mgr" in
+        apt-get)
+            if [ -f /var/run/reboot-required ]; then
+                REBOOT_REQUIRED="Yes"
+                REBOOT_PACKAGES="(unknown)"
+                if [ -f /var/run/reboot-required.pkgs ]; then
+                    ## The file lists a package once per upgrade → de-duplicate
+                    local -a reboot_pkgs
+                    mapfile -t reboot_pkgs < <(
+                        tr -s '[:space:]' '\n' < /var/run/reboot-required.pkgs \
+                            | grep -v '^$' | sort -u
+                    )
+                    (( ${#reboot_pkgs[@]} > 0 )) \
+                        && REBOOT_PACKAGES=$(_wrap_list 20 "" "${reboot_pkgs[@]}")
+                fi
+            else
+                REBOOT_REQUIRED="No"
+                REBOOT_PACKAGES="-"
+            fi
+            ;;
+        dnf|yum)
+            ## needs-restarting -r: 0 = no reboot needed, 1 = reboot needed
+            if command -v needs-restarting >/dev/null 2>&1; then
+                _timeout 30 needs-restarting -r >/dev/null 2>&1
+                case $? in
+                    0) REBOOT_REQUIRED="No" ;;
+                    1) REBOOT_REQUIRED="Yes" ;;
+                esac
+            elif [ -f /var/run/reboot-required ]; then
+                REBOOT_REQUIRED="Yes"
+            fi
+            ;;
+        zypper)
+            ## zypper needs-rebooting: 0 = no reboot needed, 102 = reboot needed
+            _timeout 30 zypper --non-interactive needs-rebooting >/dev/null 2>&1
+            case $? in
+                0)   REBOOT_REQUIRED="No" ;;
+                102) REBOOT_REQUIRED="Yes" ;;
+            esac
+            ;;
+        pacman)
+            ## If the running kernel's module directory is no longer owned by any
+            ## installed package, the kernel was upgraded and a reboot is needed.
+            if pacman -Qo "/lib/modules/$(uname -r)" >/dev/null 2>&1; then
+                REBOOT_REQUIRED="No"
+            else
+                REBOOT_REQUIRED="Yes"
+            fi
+            ;;
+        apk)
+            REBOOT_REQUIRED=$([ -f /var/run/reboot-required ] && echo "Yes" || echo "No")
+            ;;
+    esac
 
     echo -e "
 $(_section_header "Update Info")
@@ -753,11 +1017,9 @@ function show_storage_info() {
 
     echo -e "\n$(_section_header "Storage Info")"
 
-    ## Bar width scales with terminal width: COLUMNS/4, clamped to [10,30].
     ## bar_visible = bar_width + 7  ([ + width + ] + space + 3-digit pct + %)
-    local bar_width=$(( ${COLUMNS:-80} / 4 ))
-    (( bar_width < 10 )) && bar_width=10
-    (( bar_width > 30 )) && bar_width=30
+    local bar_width
+    bar_width=$(_bar_width)
     local bar_visible=$(( bar_width + 7 ))
 
     ## Header line — aligned with data rows
@@ -766,173 +1028,192 @@ function show_storage_info() {
 
     ## Exclude virtual/overlay filesystems; extract pct + fields via awk;
     ## sort descending by usage percentage; draw one bar per filesystem.
-    while IFS='|' read -r pct type size used avail mount; do
-        local bar
+    ## -P keeps every filesystem on one line (long device names would wrap),
+    ## the timeout protects against hanging network mounts, and the mount
+    ## point is rebuilt from all remaining fields so paths with spaces survive.
+    local rows=0 pct type size used mount bar
+    while IFS='|' read -r pct type size used _ mount; do
         bar=$(_progress_bar "$pct" "100" "$bar_width")
         printf "%s  ${F1}%-7s${F3}  %6s ${F1}used of${F3} %6s   ${F1}%s\n" \
             "$bar" "$type" "$used" "$size" "$mount"
-    done < <(df -hT 2>/dev/null \
-        | awk '!/docker|tmpfs|devtmpfs|squashfs|udev|overlay|shm|cgroupfs/ && NR > 1 {
+        rows=$(( rows + 1 ))
+    done < <(_timeout 5 env LC_ALL=C df -hTP 2>/dev/null \
+        | awk 'NR > 1 && !/docker|tmpfs|devtmpfs|squashfs|udev|overlay|shm|cgroupfs|efivarfs/ {
             pct=$6; gsub(/%/,"",pct)
-            printf "%d|%s|%s|%s|%s|%s\n", pct,$2,$3,$4,$5,$7
+            mount=$7; for (i=8; i<=NF; i++) mount = mount " " $i
+            printf "%d|%s|%s|%s|%s|%s\n", pct+0,$2,$3,$4,$5,mount
         }' \
-        | sort -t'|' -k1 -rn)
+        | sort -t'|' -k1,1 -rn)
+
+    (( rows == 0 )) && printf "${F4}No filesystem data available (df failed or timed out)\n"
 
     printf "${F1}"
 }
 
 
 ## Use getent passwd if available (includes LDAP/NIS/AD users).
-## Falls back to /etc/passwd for systems without getent (e.g. Alpine/musl).
+## Falls back to /etc/passwd for systems without getent (e.g. Alpine/musl) or
+## when the directory service does not answer in time. Consumers de-duplicate,
+## because a timed-out getent may already have printed part of the list.
 function _get_passwd() {
     if command -v getent >/dev/null 2>&1; then
-        getent passwd
-    else
-        cat /etc/passwd
+        _timeout 5 getent passwd 2>/dev/null && return 0
     fi
+    cat /etc/passwd 2>/dev/null
 }
 
 
-## Extract the comment field from an authorized_keys line.
-## Uses read -ra to avoid a subshell+pipe per key.
-## Supports: ssh-rsa, ssh-ed25519, ecdsa-sha2-*, sk-ssh-*, sk-ecdsa-*
+## Prints the comment of one authorized_keys line; returns 1 if the line holds
+## no public key. The key type may be preceded by options
+## (from="...",command="..." ssh-ed25519 AAAA... comment).
+## Supports: ssh-rsa, ssh-dss, ssh-ed25519, ecdsa-sha2-*, sk-ssh-*, sk-ecdsa-*
 function _ssh_key_comment() {
-    local -a fields
-    read -ra fields <<< "$1"
-    local count=${#fields[@]}
+    local re='(^|[[:space:]])(ssh-(rsa|dss|ed25519)|ecdsa-sha2-[a-z0-9-]+|sk-(ssh-ed25519|ecdsa-sha2-[a-z0-9-]+)@openssh\.com)[[:space:]]+AAAA[A-Za-z0-9+/=]+[[:space:]]*(.*)$'
 
-    if [ "$count" -gt 2 ]; then
-        local comment="${fields[$((count-1))]}"
-        ## Last field is still a key type or base64 blob → no comment present
-        if [[ "$comment" =~ ^(ssh-|ecdsa-|sk-|AAAA|BBBB) ]]; then
-            echo "- Unknown -"
-        else
-            echo "$comment"
-        fi
-    else
-        echo "- Unknown -"
-    fi
+    [[ "$1" =~ ^[[:space:]]*# ]] && return 1
+    [[ "$1" =~ $re ]] || return 1
+
+    local comment="${BASH_REMATCH[5]}"
+    comment="${comment%"${comment##*[![:space:]]}"}"    # trim trailing whitespace
+    (( ${#comment} > 60 )) && comment="${comment:0:57}..."
+    echo "${comment:-- Unknown -}"
+}
+
+
+## Prints one comment per public key found in an authorized_keys file.
+## These files are user-controlled but shown in root's terminal, so the input
+## is limited in size and stripped of control characters (terminal escapes).
+function _ssh_key_comments() {
+    local line
+    [ -f "$1" ] && [ -r "$1" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        _ssh_key_comment "$line"
+    done < <(head -n 500 "$1" 2>/dev/null | tr '\t' ' ' | tr -d '\000-\010\013-\037\177')
+}
+
+
+## Prints "<label> = [<count>] item, item, ..." wrapped at 79 columns.
+## Usage: _print_count_list <label (max 17 chars)> <count> [item...]
+function _print_count_list() {
+    local label="$1" prefix="[$2] " list="None"
+    shift 2
+    (( $# > 0 )) && list=$(_wrap_list $(( 20 + ${#prefix} )) "," "$@")
+    printf "${F1}%17s ${F2}= ${F3}%s%s\n" "$label" "$prefix" "$list"
 }
 
 
 function show_user_info() {
     [ "$USER_INFO" = "1" ] || return
 
-    local WHOIAM ID SESSIONS LOGGEDIN
-    local SYSTEMUSERCOUNT SYSTEMUSER
-    local SUPERUSERCOUNT SUPERUSER
-    local KEYUSERCOUNT=0
+    local WHOIAM ID SESSIONS
+    local -a sessions sys_users ssh_root_users keyusers
 
-    WHOIAM=$USER
+    ## id -un instead of $USER, which is unset or stale under su/sudo/cron
+    WHOIAM=$(id -un 2>/dev/null)
     ID=$(id)
-    SESSIONS=$(who | wc -l)
 
-    LOGGEDIN=$(who | awk '{print $1, $5}' | awk -F'[()]' '{print $1, $2}' | uniq -c \
-        | awk '{printf "(%s) %s %s,", $1, $2, $3}' | sed 's/,$//' \
-        | sed 's/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
+    ## One entry per user + origin: "(count) user host".
+    ## The origin is the last field if it is in parentheses; its position
+    ## depends on the locale's date format, so it cannot be addressed as $5.
+    SESSIONS=$(who 2>/dev/null | grep -c .)
+    mapfile -t sessions < <(
+        who 2>/dev/null | awk '{
+            host = ($NF ~ /^\(.*\)$/) ? substr($NF, 2, length($NF) - 2) : "local"
+            n[$1 " " host]++
+        } END { for (k in n) printf "(%d) %s\n", n[k], k }' | sort -k2
+    )
 
     ## System users: UID 1000–65533, interactive shell only
     mapfile -t sys_users < <(
-        _get_passwd | awk -F: '$3 >= 1000 && $3 < 65534 && ($7 ~ /bash$|sh$/) {print $1}'
+        _get_passwd | awk -F: '$3 ~ /^[0-9]+$/ && $3 >= 1000 && $3 < 65534 \
+            && $7 ~ /sh$/ && !seen[$1]++ { print $1 }'
     )
-    SYSTEMUSERCOUNT=${#sys_users[@]}
-    SYSTEMUSER=$(IFS=", "; echo "${sys_users[*]}" \
-        | sed 's/\([^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
 
     ## SSH keys authorized for root
-    if [ -f "/root/.ssh/authorized_keys" ]; then
-        mapfile -t ssh_root_users < <(
-            while read -r line; do
-                [[ "$line" =~ ^(ssh-|ecdsa-sha2-|sk-ssh-|sk-ecdsa-) ]] \
-                    && _ssh_key_comment "$line"
-            done < /root/.ssh/authorized_keys
-        )
-        SUPERUSERCOUNT=${#ssh_root_users[@]}
-        SUPERUSER=$(IFS=", "; echo "${ssh_root_users[*]}" \
-            | sed 's/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
-    else
-        SUPERUSERCOUNT=0
-        SUPERUSER="None"
-    fi
+    mapfile -t ssh_root_users < <(_ssh_key_comments /root/.ssh/authorized_keys)
 
-    ## SSH keys for regular users (UID 1000–65533)
-    local keyusers=()
-    while IFS=: read -r _ _ uid _ _ homedir _; do
-        [[ "$uid" =~ ^[0-9]+$ ]] || continue
-        (( uid < 1000 || uid >= 65534 )) && continue
-        [ -f "$homedir/.ssh/authorized_keys" ] || continue
-        while read -r line; do
-            if [[ "$line" =~ ^(ssh-|ecdsa-sha2-|sk-ssh-|sk-ecdsa-) ]]; then
-                keyusers+=("$(_ssh_key_comment "$line")")
-                (( KEYUSERCOUNT++ ))
-            fi
-        done < "$homedir/.ssh/authorized_keys"
-    done < <(_get_passwd)
+    ## SSH keys for regular users (UID 1000–65533), one pass per home directory
+    mapfile -t keyusers < <(
+        _get_passwd | awk -F: '$3 ~ /^[0-9]+$/ && $3 >= 1000 && $3 < 65534 \
+            && $6 != "" && !seen[$6]++ { print $6 }' \
+        | while IFS= read -r homedir; do
+            _ssh_key_comments "${homedir}/.ssh/authorized_keys"
+        done
+    )
 
-    local KEYUSER
-    KEYUSER=$(IFS=", "; echo "${keyusers[*]}" \
-        | sed 's/\([^,]*,[^,]*,[^,]*,\)/\1\n\\033[1;32m\t          /g')
-
-    echo -e "
-$(_section_header "User Data")
-${F1}    Your Username ${F2}= ${F3}${WHOIAM}
-${F1}  Your Privileges ${F2}= ${F3}${ID}
-${F1} Current Sessions ${F2}= ${F3}[${SESSIONS}] ${LOGGEDIN}
-${F1}      SystemUsers ${F2}= ${F3}[${SYSTEMUSERCOUNT}] ${SYSTEMUSER}
-${F1}  SshKeyRootUsers ${F2}= ${F3}[${SUPERUSERCOUNT}] ${SUPERUSER}
-${F1}      SshKeyUsers ${F2}= ${F3}[${KEYUSERCOUNT}] ${KEYUSER}${F1}"
+    echo -e "\n$(_section_header "User Data")"
+    printf "${F1}%17s ${F2}= ${F3}%s\n" "Your Username"   "$WHOIAM"
+    printf "${F1}%17s ${F2}= ${F3}%s\n" "Your Privileges" "$ID"
+    _print_count_list "Current Sessions" "$SESSIONS"               "${sessions[@]}"
+    _print_count_list "SystemUsers"      "${#sys_users[@]}"        "${sys_users[@]}"
+    _print_count_list "SshKeyRootUsers"  "${#ssh_root_users[@]}"   "${ssh_root_users[@]}"
+    _print_count_list "SshKeyUsers"      "${#keyusers[@]}"         "${keyusers[@]}"
+    printf "${F1}"
 }
 
 
 function show_environment_info() {
     [ "$ENVIRONMENT_INFO" = "1" ] || return
 
-    if [ ! -f "$ENVFILE" ]; then
-        createenv
-        return
-    fi
+    ## Sections run as background jobs without a terminal on stdin, so the
+    ## interactive setup cannot run here — show_info() does that up front.
+    _load_env
+    case $? in
+        0) ;;
+        2)
+            echo -e "\n$(_section_header "Environment Data")"
+            printf "${F4}%s is not owned by root — skipping\n${F1}" "$ENVFILE"
+            return
+            ;;
+        *)
+            echo -e "\n$(_section_header "Environment Data")"
+            printf "${F4}Not configured — run: %s --config\n${F1}" "$DYNMOTD_FILENAME"
+            return
+            ;;
+    esac
 
-    ## Safety: only source the file if root owns it
-    local file_owner
-    file_owner=$(stat -c '%U' "$ENVFILE" 2>/dev/null)
-    if [ "$file_owner" != "root" ]; then
-        echo "Warning: $ENVFILE is not owned by root — skipping."
-        return 1
-    fi
-
-    # shellcheck source=/dev/null
-    source "$ENVFILE"
-
-    if [ -z "${SYSFUNCTION}" ] || [ -z "${SYSENV}" ] || [ -z "${SYSSLA}" ]; then
-        rm -f "$ENVFILE"
-        createenv
-        return
-    fi
-
-    echo -e "
-$(_section_header "Environment Data")
-${F1}         Function ${F2}= ${F3}${SYSFUNCTION}
-${F1}      Environment ${F2}= ${F3}${SYSENV}
-${F1}    Service Level ${F2}= ${F3}${SYSSLA}${F1}"
+    echo -e "\n$(_section_header "Environment Data")"
+    printf "${F1}%17s ${F2}= ${F3}%s\n" "Function"      "$SYSFUNCTION"
+    printf "${F1}%17s ${F2}= ${F3}%s\n" "Environment"   "$SYSENV"
+    printf "${F1}%17s ${F2}= ${F3}%s\n" "Service Level" "$SYSSLA"
+    printf "${F1}"
 }
 
 
 function show_maintenance_info() {
     [ "$MAINTENANCE_INFO" = "1" ] || [ "$MAINTENANCE_ALWAYS" = "1" ] || return
 
+    echo -e "\n$(_section_header "Maintenance Information")"
+
     if [ ! -f "$MAINLOG" ]; then
-        echo -e "
-$(_section_header "Maintenance Information")
-${F4}No maintenance log found at ${MAINLOG}${F1}"
+        printf "${F4}No maintenance log found at %s\n${F1}" "$MAINLOG"
         return
     fi
 
-    local MAINTENANCE
-    MAINTENANCE=$(listlog | head -n "${LIST_LOG_ENTRY}")
+    local entries
+    entries=$(listlog | head -n "${LIST_LOG_ENTRY}")
 
-    echo -e "
-$(_section_header "Maintenance Information")
-${F4}${MAINTENANCE}${F1}"
+    if [ -n "$entries" ]; then
+        printf '%s\n' "$entries"
+    else
+        printf "${F1}No entries — add one with: %s -a \"note\"\n" "$DYNMOTD_FILENAME"
+    fi
+    printf "${F1}"
+}
+
+
+## Prints the reverse DNS name of an IP address, or nothing.
+## PTR records are controlled by the remote party, so only hostname characters
+## are let through.
+function _resolve_ip() {
+    local name=""
+    if command -v getent >/dev/null 2>&1; then
+        name=$(_timeout 1 getent hosts "$1" 2>/dev/null | awk '{print $2; exit}')
+    elif command -v host >/dev/null 2>&1; then
+        name=$(_timeout 2 host -W 1 "$1" 2>/dev/null \
+            | awk '/domain name pointer/ {sub(/\.$/, "", $NF); print $NF; exit}')
+    fi
+    printf '%s' "${name//[^A-Za-z0-9._:-]/}"
 }
 
 
@@ -947,13 +1228,13 @@ function show_fail2ban_info() {
         return
     fi
 
-    local -a jails
+    local -a jails jail_ips
     local banned_total=0
-    local summary=""
+    local summary="" jail status banned
 
     ## Retrieve active jail list from fail2ban-client status
     mapfile -t jails < <(
-        fail2ban-client status 2>/dev/null \
+        _timeout 5 fail2ban-client status 2>/dev/null \
             | awk -F':\t' '/Jail list/ {print $2}' \
             | tr ',' '\n' | tr -d ' \t' | grep -v '^$'
     )
@@ -965,13 +1246,14 @@ ${F4}fail2ban is not running or no active jails${F1}"
         return
     fi
 
+    ## One status call per jail delivers both the counter and the IP list
     for jail in "${jails[@]}"; do
-        local banned
-        banned=$(fail2ban-client status "$jail" 2>/dev/null \
-            | awk '/Currently banned:/ {print $NF}')
-        banned=${banned:-0}
+        status=$(_timeout 5 fail2ban-client status "$jail" 2>/dev/null)
+        banned=$(awk '/Currently banned:/ {print $NF}' <<< "$status")
+        banned=$(_to_int "$banned" 0)
         banned_total=$(( banned_total + banned ))
         summary+="${jail}:${banned}  "
+        jail_ips+=("$(sed -n 's/.*Banned IP list:[[:space:]]*//p' <<< "$status")")
     done
     summary="${summary%  }"     # strip trailing spaces
 
@@ -983,54 +1265,63 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
     ## Optional: list banned IPs per jail with reverse DNS
     [ "$SHOWFAIL2BAN_IPS" = "1" ] || return
 
-    for jail in "${jails[@]}"; do
-        local -a ips
+    local idx ip
+    for idx in "${!jails[@]}"; do
+        jail="${jails[$idx]}"
+
+        local -a ips=() shown=()
         mapfile -t ips < <(
-            fail2ban-client status "$jail" 2>/dev/null \
-                | grep 'Banned IP list:' \
-                | sed 's/.*Banned IP list:[[:space:]]*//' \
-                | tr ' ' '\n' | grep -v '^$'
+            tr -s '[:space:]' '\n' <<< "${jail_ips[$idx]}" | grep -E '^[0-9A-Fa-f.:]+$'
         )
         [ ${#ips[@]} -eq 0 ] && continue
 
         printf "\n${F1} %s ${F2}(${F3}%d ${F1}IPs${F2}):\n" "$jail" "${#ips[@]}"
 
+        ## A busy jail can hold hundreds of addresses — list at most
+        ## FAIL2BAN_MAX_IPS of them (0 = no limit).
+        if (( FAIL2BAN_MAX_IPS > 0 && ${#ips[@]} > FAIL2BAN_MAX_IPS )); then
+            shown=("${ips[@]:0:FAIL2BAN_MAX_IPS}")
+        else
+            shown=("${ips[@]}")
+        fi
+
         ## Field width = longest IP in this jail + 1 (min 1 space before =).
         ## Guarantees = lands at the same column for every IP in the list.
         local max_ip_len=0
-        for ip in "${ips[@]}"; do
+        for ip in "${shown[@]}"; do
             (( ${#ip} > max_ip_len )) && max_ip_len=${#ip}
         done
         local ip_field=$(( max_ip_len + 1 ))
 
-        if [ "$RESOLVEFAIL2BAN_IPS" = "1" ]; then
-            ## Resolve all IPs in parallel; collect results in temp files to preserve order.
-            local -a ip_tmpfiles=()
-            for ip in "${ips[@]}"; do
-                local tmpf
-                tmpf=$(mktemp 2>/dev/null) || tmpf="/tmp/dynmotd_ip_$$_${#ip_tmpfiles[@]}"
-                ip_tmpfiles+=("$tmpf")
-                (
-                    local hostname=""
-                    if command -v getent >/dev/null 2>&1; then
-                        hostname=$(timeout 1 getent hosts "$ip" 2>/dev/null | awk '{print $2; exit}')
-                    elif command -v host >/dev/null 2>&1; then
-                        hostname=$(host -W 1 "$ip" 2>/dev/null \
-                            | awk '/domain name pointer/ {sub(/\.$/, "", $NF); print $NF; exit}')
-                    fi
-                    printf "${F3} %-${ip_field}s${F2}= ${F3}%s\n" "$ip" "${hostname:---}" > "$tmpf"
-                ) &
+        ## Resolve all IPs in parallel; one result file per IP inside a private
+        ## temp directory preserves the order. Without a temp directory the
+        ## list is printed unresolved.
+        local rdir=""
+        [ "$RESOLVEFAIL2BAN_IPS" = "1" ] && rdir=$(mktemp -d 2>/dev/null)
+
+        if [ -n "$rdir" ]; then
+            local n=0 name
+            for ip in "${shown[@]}"; do
+                ( _resolve_ip "$ip" > "${rdir}/${n}" ) &
+                n=$(( n + 1 ))
             done
             wait
-            for tmpf in "${ip_tmpfiles[@]}"; do
-                cat "$tmpf" 2>/dev/null
-                rm -f "$tmpf"
+            n=0
+            for ip in "${shown[@]}"; do
+                name=""
+                [ -f "${rdir}/${n}" ] && IFS= read -r name < "${rdir}/${n}"
+                printf "${F3} %-${ip_field}s${F2}= ${F3}%s\n" "$ip" "${name:---}"
+                n=$(( n + 1 ))
             done
+            rm -rf "$rdir"
         else
-            for ip in "${ips[@]}"; do
+            for ip in "${shown[@]}"; do
                 printf "${F3} %s\n" "$ip"
             done
         fi
+
+        (( ${#ips[@]} > ${#shown[@]} )) \
+            && printf "${F1} ... and %d more\n" $(( ${#ips[@]} - ${#shown[@]} ))
     done
     printf "${F1}"
 }
@@ -1044,7 +1335,11 @@ function show_network_info() {
 
     printf "${F1}  %-14s %-10s %s\n" "Interface" "State" "Speed"
 
+    local iface state
     while read -r iface state; do
+        ## VLAN and container interfaces are listed as "name@parent"
+        iface="${iface%%@*}"
+
         ## skip loopback and docker veth pairs
         [ "$iface" = "lo" ] && continue
         [[ "$iface" == veth* ]] && continue
@@ -1071,20 +1366,27 @@ function show_network_info() {
 
 function show_version_info() {
     [ "$VERSION_INFO" = "1" ] || return
+
+    ## Right-aligned banner, 79 chars wide: padding + "[ " + version + " ]=="
+    local lead=$(( 73 - ${#VERSION} ))
+    (( lead < 0 )) && lead=0
+    local padding
+    padding=$(printf '%*s' "$lead" '' | tr ' ' '=')
     echo -e "
-${F2}==========================================================[ ${F1}${VERSION}${F2} ]==
+${F2}${padding}[ ${F1}${VERSION}${F2} ]==
 ${F1}"
 }
-
 
 
 function show_failed_services_info() {
     [ "$FAILED_SERVICES_INFO" = "1" ] || return
     command -v systemctl >/dev/null 2>&1 || return
 
+    ## --plain drops the status bullet, so the unit name is always field 1;
+    ## the awk expression still tolerates older systemd versions that print it.
     local -a units
     mapfile -t units < <(
-        systemctl --failed --no-legend --no-pager 2>/dev/null \
+        _timeout 5 systemctl --failed --no-legend --no-pager --plain 2>/dev/null \
             | awk 'NF >= 4 { print ($1 ~ /^[a-zA-Z0-9_@:.-]/) ? $1 : $2 }'
     )
 
@@ -1099,7 +1401,7 @@ function show_failed_services_info() {
     echo -e "\n$(_section_header "Failed Services")"
     printf "${F1}  Failed Services ${F2}= ${F4}%d\n" "${#units[@]}"
 
-    local max_len=0
+    local max_len=0 u
     for u in "${units[@]}"; do
         (( ${#u} > max_len )) && max_len=${#u}
     done
@@ -1112,38 +1414,55 @@ function show_failed_services_info() {
 }
 
 
+## A wttr.in answer is usable if it is one short line with the six
+## pipe-separated fields we asked for (error pages are HTML or plain text).
+function _weather_valid() {
+    [[ "$1" == *'|'*'|'*'|'*'|'*'|'* ]] && [[ "$1" != *'<'* ]] && (( ${#1} < 200 ))
+}
+
+
 function show_weather_info() {
     [ "$WEATHER_INFO" = "1" ] || [ "$WEATHER_ALWAYS" = "1" ] || return
-    command -v curl >/dev/null 2>&1 || return
 
-    local cache_key
-    cache_key=$(printf '%s|%s' "${WEATHER_CITY:-}" "${WEATHER_UNITS:-}" \
-        | md5sum 2>/dev/null | awk '{print $1}')
-    [ -z "$cache_key" ] && cache_key="default"
-    local cache_file="${DYNMOTDDIR}/weather_cache_${cache_key}"
-    local weather=""
+    local weather="" cached=""
 
-    ## Use cached data if still within WEATHER_CACHE_HOURS
-    if [ -f "$cache_file" ] && [ "${WEATHER_CACHE_HOURS:-1}" -gt 0 ]; then
-        local now mtime age
-        now=$(date +%s)
-        mtime=$(stat -c %Y "$cache_file" 2>/dev/null) \
-            || mtime=$(stat -f %m "$cache_file" 2>/dev/null)
-        age=$(( now - ${mtime:-0} ))
-        if (( age < WEATHER_CACHE_HOURS * 3600 )); then
-            weather=$(cat "$cache_file" 2>/dev/null)
+    if command -v curl >/dev/null 2>&1; then
+        local cache_key
+        cache_key=$(printf '%s|%s' "${WEATHER_CITY:-}" "${WEATHER_UNITS:-}" \
+            | md5sum 2>/dev/null | awk '{print $1}')
+        [ -z "$cache_key" ] && cache_key="default"
+        local cache_file="${DYNMOTDDIR}/weather_cache_${cache_key}"
+
+        if [ -f "$cache_file" ]; then
+            IFS= read -r cached < "$cache_file"
+            _weather_valid "$cached" || cached=""
         fi
-    fi
 
-    ## Fetch fresh data if cache is empty or expired
-    if [ -z "$weather" ]; then
-        local location="${WEATHER_CITY:-}"
-        local url="wttr.in/${location}?format=%l|%C|%t|%f|%h|%w"
-        [ -n "${WEATHER_UNITS:-}" ] && url="${url}&${WEATHER_UNITS}"
-        weather=$(curl -s --max-time 3 "$url" 2>/dev/null)
-        if [ -n "$weather" ]; then
-            mkdir -p "$DYNMOTDDIR"
-            echo "$weather" > "$cache_file"
+        ## Use cached data if still within WEATHER_CACHE_HOURS
+        if [ -n "$cached" ] && (( WEATHER_CACHE_HOURS > 0 )) \
+            && (( $(_file_age "$cache_file") < WEATHER_CACHE_HOURS * 3600 )); then
+            weather="$cached"
+        fi
+
+        ## Fetch fresh data if cache is empty or expired
+        if [ -z "$weather" ]; then
+            local location="${WEATHER_CITY:-}"
+            location="${location// /+}"
+            local url="wttr.in/${location}?format=%l|%C|%t|%f|%h|%w"
+            case "${WEATHER_UNITS:-}" in
+                m|u|M) url="${url}&${WEATHER_UNITS}" ;;
+            esac
+            ## First line only, control characters stripped: the answer comes
+            ## from the network and is printed into root's terminal.
+            weather=$(curl -fsS --connect-timeout 2 --max-time 3 "$url" 2>/dev/null \
+                | head -n 1 | tr -d '\000-\037\177')
+            if _weather_valid "$weather"; then
+                _write_cache "$cache_file" "$weather"
+            else
+                ## Service unreachable or error page → fall back to the last
+                ## good answer instead of caching or showing garbage
+                weather="$cached"
+            fi
         fi
     fi
 
@@ -1168,44 +1487,59 @@ function show_weather_info() {
 }
 
 
+## Temp directory of the current show_info run; removed by the EXIT trap.
+_DYNMOTD_TMPDIR=""
+
 function show_info() {
     _check_dependencies \
         || echo "Warning: some dependencies are missing — output may be incomplete."
 
-    ## Run all sections in parallel, each writing to a numbered temp file.
-    ## Output is collected and printed in order once all sections complete.
-    local tmpdir
-    tmpdir=$(mktemp -d 2>/dev/null) || {
+    ## First-run setup has to happen here in the foreground: the sections below
+    ## run as background jobs whose stdin is not the terminal, so they cannot
+    ## prompt. Without a terminal (cron, pipe) the setup is skipped.
+    if [ "$ENVIRONMENT_INFO" = "1" ] && [ -t 0 ] && [ -t 1 ]; then
+        _load_env
+        [ $? -eq 1 ] && createenv
+    fi
+
+    ## Display order — the single place that defines it.
+    local sections=(system weather storage network user update environment
+                    failed_services fail2ban maintenance version)
+    local s i=0
+
+    _DYNMOTD_TMPDIR=$(mktemp -d 2>/dev/null) || _DYNMOTD_TMPDIR=""
+    if [ -z "$_DYNMOTD_TMPDIR" ]; then
         ## mktemp failed — fall back to sequential output
-        show_system_info; show_storage_info; show_network_info
-        show_user_info; show_update_info; show_environment_info
-        show_failed_services_info; show_fail2ban_info; show_maintenance_info; show_weather_info; show_version_info
+        for s in "${sections[@]}"; do
+            "show_${s}_info"
+        done
         echo -e "${C_RESET}"
         return
-    }
-    chmod 700 "$tmpdir"
+    fi
 
-    show_system_info            > "${tmpdir}/01" &
-    show_weather_info           > "${tmpdir}/02" &
-    show_storage_info           > "${tmpdir}/03" &
-    show_network_info           > "${tmpdir}/04" &
-    show_user_info              > "${tmpdir}/05" &
-    show_update_info            > "${tmpdir}/06" &
-    show_environment_info       > "${tmpdir}/07" &
-    show_failed_services_info   > "${tmpdir}/08" &
-    show_fail2ban_info          > "${tmpdir}/09" &
-    show_maintenance_info       > "${tmpdir}/10" &
-    show_version_info           > "${tmpdir}/11" &
+    ## Run all sections in parallel, each writing to a numbered temp file.
+    ## Output is collected and printed in order once all sections complete.
+    for s in "${sections[@]}"; do
+        i=$(( i + 1 ))
+        "show_${s}_info" > "$(printf '%s/%02d' "$_DYNMOTD_TMPDIR" "$i")" &
+    done
 
     wait  ## wait for all sections to complete
 
-    cat "${tmpdir}"/* 2>/dev/null
-    rm -rf "$tmpdir"
+    cat "${_DYNMOTD_TMPDIR}"/[0-9][0-9] 2>/dev/null
+    rm -rf "$_DYNMOTD_TMPDIR"
+    _DYNMOTD_TMPDIR=""
     echo -e "${C_RESET}"
 }
 
 
 #### Main dispatcher
+
+_sanitize_config
+
+## Remove the temp directory of show_info even when the run is interrupted
+trap '[ -n "$_DYNMOTD_TMPDIR" ] && rm -rf "$_DYNMOTD_TMPDIR"' EXIT
+trap 'exit 130' INT TERM HUP
 
 if [ -z "$1" ]; then
     show_info
