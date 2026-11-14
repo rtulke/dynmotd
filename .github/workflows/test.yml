@@ -71,6 +71,10 @@ jobs:
               boxes = [row for row in rows if row and row[0] in corners]
               widths = sorted(set(len(row) for row in boxes))
               assert boxes, name + ": no boxes"
-              assert len(widths) == 1, "%s: ragged box edges, widths %s" % (name, widths)
-              print("%s: %d box rows, all %d columns wide" % (name, len(boxes), widths[0]))
+              # A row holds one box per column that still has content, so its
+              # width must be n boxes plus the two-column gaps between them
+              box = widths[0]
+              allowed = [n * box + (n - 1) * 2 for n in range(1, 9)]
+              assert all(w in allowed for w in widths), "%s: ragged box edges, widths %s" % (name, widths)
+              print("%s: %d box rows, boxes %d columns wide, row widths %s" % (name, len(boxes), box, widths))
           PY
