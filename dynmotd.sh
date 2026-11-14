@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.19.4"
+VERSION="dynmotd v1.19.5"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -24,17 +24,17 @@ USER_INFO="1"               # user information
 ENVIRONMENT_INFO="1"        # environment information
 MAINTENANCE_INFO="1"        # maintenance log
 UPDATE_INFO="1"             # available package updates
-FAIL2BAN_INFO="1"          # fail2ban banned IPs (only shown if fail2ban-client is installed)
-FAIL2BAN_ALWAYS="0"        # always show Fail2Ban section, even if not installed or no active jails
+FAIL2BAN_INFO="1"          # fail2ban banned IPs (shows a notice if fail2ban-client is missing)
+FAIL2BAN_ALWAYS="0"        # always show Fail2Ban section, even if FAIL2BAN_INFO="0"
 UPDATE_ALWAYS="0"          # always show Update section, even if UPDATE_INFO="0"
 MAINTENANCE_ALWAYS="0"     # always show Maintenance section, even if MAINTENANCE_INFO="0"
 SHOWFAIL2BAN_IPS="1"       # show individual banned IPs per jail (no DNS)
 RESOLVEFAIL2BAN_IPS="1"    # resolve banned IPs via DNS (requires SHOWFAIL2BAN_IPS="1")
 FAIL2BAN_MAX_IPS="10"      # max banned IPs listed per jail (0 = no limit)
-FAILED_SERVICES_INFO="1"    # failed systemd services (auto-hidden if none failed)
+FAILED_SERVICES_INFO="1"    # failed systemd services (auto-hidden if none failed; notice if systemctl is missing)
 FAILED_SERVICES_ALWAYS="0"  # always show Failed Services section, even when none failed
 NETWORK_INFO="1"            # network interface state and speed
-WEATHER_INFO="1"            # weather section via wttr.in (auto-hidden if curl unavailable)
+WEATHER_INFO="1"            # weather section via wttr.in (shows a notice if curl is missing)
 WEATHER_ALWAYS="0"          # always show Weather section, even if fetch fails
 WEATHER_CITY=""             # city name for weather lookup (empty = auto-detect from IP)
 WEATHER_CACHE_HOURS="1"     # hours before weather data is refreshed (0 = always live)
@@ -695,6 +695,85 @@ function uninstall() {
 LABEL_WIDTH=17
 
 
+## Prints the notice for a section that is switched on but whose tool is not
+## installed, so a missing section is never a silent surprise.
+## Usage: _missing_tool <label> <tool> <toggle variable>
+function _missing_tool() {
+    _kv "$1" "$2 not installed (hide: $3=\"0\")" "$F4"
+}
+
+
+## Extracts the addresses of one family from ifconfig output on stdin.
+## Handles both net-tools formats:
+##   old:  "inet addr:192.0.2.1  Bcast:..."   "inet6 addr: 2001:db8::1/64 Scope:Global"
+##   new:  "inet 192.0.2.1  netmask ..."      "inet6 2001:db8::1  prefixlen 64 ..."
+## Usage: ifconfig | _parse_ifconfig <4|6>
+function _parse_ifconfig() {
+    awk -v fam="$1" '
+        /^[^ \t]/ { iface = $1; sub(/:$/, "", iface) }
+        iface == "lo" { next }
+        fam == 4 && $1 == "inet" {
+            a = $2; sub(/^addr:/, "", a)
+            if (a != "") print a
+        }
+        fam == 6 && $1 == "inet6" {
+            a = $2; if (a == "addr:") a = $3
+            sub(/\/.*/, "", a)
+            if (a != "") print a
+        }
+    '
+}
+
+
+## Prints the addresses of all active non-loopback interfaces, one per line.
+## Tries the tools from newest to oldest so the script also works on old
+## distributions:
+##   1. ip -brief          iproute2 4.x and newer
+##   2. ip -o addr show    any iproute2
+##   3. ifconfig           net-tools
+##   4. hostname -I        last resort
+## Usage: _list_addresses <4|6>
+function _list_addresses() {
+    local fam="$1" out iface addr state
+
+    if command -v ip >/dev/null 2>&1; then
+        ## Interfaces without carrier (state DOWN) are skipped
+        if out=$(ip "-${fam}" -brief addr show 2>/dev/null); then
+            awk '$1 != "lo" && $2 != "DOWN" {
+                    for (i = 3; i <= NF; i++) { split($i, a, "/"); if (a[1]) print a[1] }
+                 }' <<< "$out"
+            return 0
+        fi
+
+        ## One line per address: "2: eth0    inet 192.0.2.1/24 brd ... scope global eth0"
+        ## This form has no carrier state, so it is read from sysfs.
+        if out=$(ip -o "-${fam}" addr show up 2>/dev/null); then
+            while read -r _ iface _ addr _; do
+                iface="${iface%%@*}"
+                [ -n "$addr" ] && [ "$iface" != "lo" ] || continue
+                state=$(cat "/sys/class/net/${iface}/operstate" 2>/dev/null)
+                [ "$state" = "down" ] && continue
+                echo "${addr%%/*}"
+            done <<< "$out"
+            return 0
+        fi
+    fi
+
+    if command -v ifconfig >/dev/null 2>&1; then
+        ifconfig 2>/dev/null | _parse_ifconfig "$fam"
+        return 0
+    fi
+
+    ## hostname -I lists both families; IPv6 addresses contain a colon
+    if [ "$fam" = "6" ]; then
+        hostname -I 2>/dev/null | tr -s ' ' '\n' | grep ':'
+    else
+        hostname -I 2>/dev/null | tr -s ' ' '\n' | grep -v ':' | grep .
+    fi
+    return 0
+}
+
+
 ## Prints one "label = value" line in the common layout.
 ## Usage: _kv <label> <value> [value color=F3] [label width=LABEL_WIDTH]
 function _kv() {
@@ -764,20 +843,9 @@ function show_system_info() {
     [ -n "$HOSTNAME" ] || HOSTNAME=$(hostname 2>/dev/null)
     [ -n "$HOSTNAME" ] || HOSTNAME="Unknown"
 
-    ## IPv4 + IPv6: all non-loopback addresses via iproute2, fallback to hostname -I
-    if command -v ip >/dev/null 2>&1; then
-        IPV4=$(ip -4 -brief addr show 2>/dev/null \
-            | awk '$1 != "lo" && $2 != "DOWN" {
-                for(i=3;i<=NF;i++) { split($i,a,"/"); if(a[1]) printf "%s ", a[1] }
-              }' | xargs)
-        IPV6=$(ip -6 -brief addr show 2>/dev/null \
-            | awk '$1 != "lo" && $2 != "DOWN" {
-                for(i=3;i<=NF;i++) { split($i,a,"/"); if(a[1] !~ /^fe80/) printf "%s ", a[1] }
-              }' | xargs)
-    else
-        IPV4=$(hostname -I 2>/dev/null | awk '{print $1}')
-        IPV6=""
-    fi
+    ## IPv4 + IPv6: all non-loopback addresses, link-local IPv6 excluded
+    IPV4=$(_list_addresses 4 | xargs)
+    IPV6=$(_list_addresses 6 | grep -vi '^fe80' | xargs)
     [ -z "$IPV4" ] && IPV4="Unknown"
     ## Only add IPv6 line if addresses are present
     IPV6_LINE=""
@@ -941,6 +1009,7 @@ function show_update_info() {
     local REBOOT_PACKAGES="N/A"
     local mgr
     mgr=$(_pkg_manager)
+    [ -n "$mgr" ] || UPDATES="Unknown (no supported package manager found)"
 
     if [ -n "$mgr" ]; then
         ## Cache the update count: querying the package manager takes 1–3 sec
@@ -958,6 +1027,7 @@ function show_update_info() {
         fi
 
         if [ "$UPDATES" = "Unknown" ]; then
+            ## Stays "Unknown" if the query fails (lock held, timeout, repo error)
             if count=$(_count_updates "$mgr") && [[ "$count" =~ ^[0-9]+$ ]]; then
                 UPDATES="$count"
                 _write_cache "$cache_file" "$count"
@@ -1248,9 +1318,8 @@ function show_fail2ban_info() {
     [ "$FAIL2BAN_INFO" = "1" ] || [ "$FAIL2BAN_ALWAYS" = "1" ] || return
 
     if ! command -v fail2ban-client >/dev/null 2>&1; then
-        [ "$FAIL2BAN_ALWAYS" = "1" ] || return
         echo -e "\n$(_section_header "Fail2Ban")"
-        _kv "Fail2Ban" "not installed"
+        _missing_tool "Fail2Ban" "fail2ban-client" "FAIL2BAN_INFO"
         printf "${F1}"
         return
     fi
@@ -1363,18 +1432,26 @@ function show_fail2ban_info() {
 
 function show_network_info() {
     [ "$NETWORK_INFO" = "1" ] || return
-    command -v ip >/dev/null 2>&1 || return
 
     echo -e "\n$(_section_header "Network Interfaces")"
 
-    local iface state
-    while read -r iface state; do
-        ## VLAN and container interfaces are listed as "name@parent"
-        iface="${iface%%@*}"
+    ## Interfaces and their state come straight from sysfs — the same data
+    ## `ip -brief link` prints, but without needing any tool or tool version.
+    if [ ! -d /sys/class/net ]; then
+        _kv "Interfaces" "not available (/sys/class/net is missing)" "$F4"
+        printf "${F1}"
+        return
+    fi
 
+    local dir iface state idx
+    while read -r _ iface; do
         ## skip loopback and docker veth pairs
         [ "$iface" = "lo" ] && continue
         [[ "$iface" == veth* ]] && continue
+
+        state=$(cat "/sys/class/net/${iface}/operstate" 2>/dev/null)
+        state="${state^^}"
+        [ -n "$state" ] || state="UNKNOWN"
 
         local speed=""
         local speed_raw
@@ -1394,8 +1471,12 @@ function show_network_info() {
             _kv "$iface" "$state" "$state_color"
         fi
 
-    done < <(ip -brief link show 2>/dev/null \
-        | awk '{print $1, toupper($2)}')
+    ## "*/" matches interface directories only; sort by kernel interface index
+    done < <(for dir in /sys/class/net/*/; do
+                 iface="${dir%/}"; iface="${iface##*/}"
+                 idx=$(cat "${dir}ifindex" 2>/dev/null)
+                 printf '%s %s\n' "$(_to_int "$idx" 0)" "$iface"
+             done | sort -n)
 
     printf "${F1}"
 }
@@ -1417,7 +1498,13 @@ ${F1}"
 
 function show_failed_services_info() {
     [ "$FAILED_SERVICES_INFO" = "1" ] || return
-    command -v systemctl >/dev/null 2>&1 || return
+
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo -e "\n$(_section_header "Failed Services")"
+        _missing_tool "Failed Services" "systemctl" "FAILED_SERVICES_INFO"
+        printf "${F1}"
+        return
+    fi
 
     ## --plain drops the status bullet, so the unit name is always field 1;
     ## the awk expression still tolerates older systemd versions that print it.
@@ -1463,43 +1550,48 @@ function show_weather_info() {
 
     local weather="" cached=""
 
-    if command -v curl >/dev/null 2>&1; then
-        local cache_key
-        cache_key=$(printf '%s|%s' "${WEATHER_CITY:-}" "${WEATHER_UNITS:-}" \
-            | md5sum 2>/dev/null | awk '{print $1}')
-        [ -z "$cache_key" ] && cache_key="default"
-        local cache_file="${DYNMOTDDIR}/weather_cache_${cache_key}"
+    if ! command -v curl >/dev/null 2>&1; then
+        echo -e "\n$(_section_header "Weather")"
+        _missing_tool "Weather" "curl" "WEATHER_INFO"
+        printf "${F1}"
+        return
+    fi
 
-        if [ -f "$cache_file" ]; then
-            IFS= read -r cached < "$cache_file"
-            _weather_valid "$cached" || cached=""
-        fi
+    local cache_key
+    cache_key=$(printf '%s|%s' "${WEATHER_CITY:-}" "${WEATHER_UNITS:-}" \
+        | md5sum 2>/dev/null | awk '{print $1}')
+    [ -z "$cache_key" ] && cache_key="default"
+    local cache_file="${DYNMOTDDIR}/weather_cache_${cache_key}"
 
-        ## Use cached data if still within WEATHER_CACHE_HOURS
-        if [ -n "$cached" ] && (( WEATHER_CACHE_HOURS > 0 )) \
-            && (( $(_file_age "$cache_file") < WEATHER_CACHE_HOURS * 3600 )); then
+    if [ -f "$cache_file" ]; then
+        IFS= read -r cached < "$cache_file"
+        _weather_valid "$cached" || cached=""
+    fi
+
+    ## Use cached data if still within WEATHER_CACHE_HOURS
+    if [ -n "$cached" ] && (( WEATHER_CACHE_HOURS > 0 )) \
+        && (( $(_file_age "$cache_file") < WEATHER_CACHE_HOURS * 3600 )); then
+        weather="$cached"
+    fi
+
+    ## Fetch fresh data if cache is empty or expired
+    if [ -z "$weather" ]; then
+        local location="${WEATHER_CITY:-}"
+        location="${location// /+}"
+        local url="wttr.in/${location}?format=%l|%C|%t|%f|%h|%w"
+        case "${WEATHER_UNITS:-}" in
+            m|u|M) url="${url}&${WEATHER_UNITS}" ;;
+        esac
+        ## First line only, control characters stripped: the answer comes
+        ## from the network and is printed into root's terminal.
+        weather=$(curl -fsS --connect-timeout 2 --max-time 3 "$url" 2>/dev/null \
+            | head -n 1 | tr -d '\000-\037\177')
+        if _weather_valid "$weather"; then
+            _write_cache "$cache_file" "$weather"
+        else
+            ## Service unreachable or error page → fall back to the last
+            ## good answer instead of caching or showing garbage
             weather="$cached"
-        fi
-
-        ## Fetch fresh data if cache is empty or expired
-        if [ -z "$weather" ]; then
-            local location="${WEATHER_CITY:-}"
-            location="${location// /+}"
-            local url="wttr.in/${location}?format=%l|%C|%t|%f|%h|%w"
-            case "${WEATHER_UNITS:-}" in
-                m|u|M) url="${url}&${WEATHER_UNITS}" ;;
-            esac
-            ## First line only, control characters stripped: the answer comes
-            ## from the network and is printed into root's terminal.
-            weather=$(curl -fsS --connect-timeout 2 --max-time 3 "$url" 2>/dev/null \
-                | head -n 1 | tr -d '\000-\037\177')
-            if _weather_valid "$weather"; then
-                _write_cache "$cache_file" "$weather"
-            else
-                ## Service unreachable or error page → fall back to the last
-                ## good answer instead of caching or showing garbage
-                weather="$cached"
-            fi
         fi
     fi
 

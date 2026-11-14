@@ -1,7 +1,9 @@
 # dynmotd
 Dynamic Message of the Day — a single Bash script that displays system information on login.
 
-![Example](/data/screenshot.png)
+![dynmotd v1.19 example output](/data/screenshot.png)
+
+*Example output of v1.19 in the default color scheme. Host name, addresses, users and SSH keys in the screenshot are sample data.*
 
 ## Features
 
@@ -16,8 +18,12 @@ Dynamic Message of the Day — a single Bash script that displays system informa
 - Load average (1m / 5m / 15m) and realistic available memory (`MemAvailable`)
 - Graphical utilization bars for memory, swap and disk
 - Network interface state and link speed
+- Optional weather section via wttr.in, cached
+- Uniform `label = value` layout — the `=` sits in the same column in every section
 - Optional Fail2Ban section — summary, per-jail IP list, parallel reverse DNS
 - Optional Failed Systemd Services section (auto-hidden when all services are healthy)
+- A switched-on section whose tool is missing says so instead of silently disappearing
+- Address lookup falls back from `ip -brief` to `ip -o`, `ifconfig` and `hostname -I` for old distributions
 - Parallel section rendering for fast output
 - Update count cache to avoid slow package manager queries on every login
 - LDAP / AD / NIS user support via `getent`
@@ -30,7 +36,7 @@ Distributions actively supported (last ~10 years, 2015 – 2026):
 ### Debian family
 | Distribution            | Versions / Releases          | Status              |
 |-------------------------|------------------------------|---------------------|
-| Debian                  | 8 (Jessie) – 12 (Bookworm)   | Tested              |
+| Debian                  | 8 (Jessie) – 13 (Trixie)     | Tested              |
 | Ubuntu                  | 16.04 LTS – 24.04 LTS        | Tested              |
 | Linux Mint              | 18 – 22                      | Tested              |
 | Raspberry Pi OS         | Bullseye, Bookworm           | Tested              |
@@ -73,6 +79,31 @@ Distributions actively supported (last ~10 years, 2015 – 2026):
 
 > "Tested" = verified by the author. "Compatible" = dependency auto-install supported, not explicitly tested.
 > Tell me if you have verified it on a distribution not listed here.
+
+## Requirements
+
+- Linux, run as root (other users get the static `/etc/motd` instead)
+- Bash 4 or newer — on Alpine install it first: `apk add bash`
+- Network addresses are read with whatever the system offers, newest first: `ip -brief` (iproute2 4.x and newer), `ip -o addr show` (any iproute2), `ifconfig` (net-tools), `hostname -I`. This keeps the address lines working on old distributions. The Network Interfaces section reads `/sys/class/net` directly and needs no tool.
+
+Optional tools:
+
+| Tool | Used for | If missing |
+|---|---|---|
+| `curl` | Weather section | the section shows a notice |
+| `fail2ban-client` | Fail2Ban section | the section shows a notice |
+| `systemctl` | Failed Services section | the section shows a notice |
+| `timeout` (coreutils / busybox) | time limits for slow commands (`df` on network mounts, DNS lookups, package manager queries) | commands run without a time limit |
+| `lscpu` | CPU model on ARM and other non-x86 systems | the machine architecture is shown instead |
+
+A section that is switched on but whose tool is not installed is never dropped silently. It prints a one-line notice that names the missing tool and the switch that hides the section, for example:
+
+```
+============[ Fail2Ban ]=======================================================
+         Fail2Ban = fail2ban-client not installed (hide: FAIL2BAN_INFO="0")
+```
+
+Either install the tool or set the named switch to `"0"` in the config block.
 
 ## Installation
 
@@ -200,23 +231,23 @@ Each section has an `_INFO` toggle and an optional `_ALWAYS` override:
 
 | Variable | Default | Description |
 |---|---|---|
-| `SYSTEM_INFO` | `1` | System info (hostname, IP, kernel, CPU, memory, load) |
+| `SYSTEM_INFO` | `1` | System info (hostname, IPs, kernel, distribution, uptime, load, CPU, memory, swap, processes) |
 | `STORAGE_INFO` | `1` | Storage / disk usage with utilization bars |
 | `NETWORK_INFO` | `1` | Network interfaces — state and link speed |
 | `USER_INFO` | `1` | User sessions and SSH keys |
 | `UPDATE_INFO` | `1` | Available package updates |
 | `UPDATE_ALWAYS` | `0` | Show Update section even when `UPDATE_INFO="0"` |
 | `ENVIRONMENT_INFO` | `1` | Environment label (function, env, SLA) |
-| `FAILED_SERVICES_INFO` | `1` | Failed systemd services (auto-hidden when none failed) |
+| `FAILED_SERVICES_INFO` | `1` | Failed systemd services (auto-hidden when none failed; notice if `systemctl` is missing) |
 | `FAILED_SERVICES_ALWAYS` | `0` | Always show Failed Services, even when all healthy (`= none`) |
-| `FAIL2BAN_INFO` | `1` | Fail2Ban summary — total banned + jail overview |
-| `FAIL2BAN_ALWAYS` | `0` | Always show Fail2Ban, even if not installed |
+| `FAIL2BAN_INFO` | `1` | Fail2Ban summary — total banned + jail overview (notice if `fail2ban-client` is missing) |
+| `FAIL2BAN_ALWAYS` | `0` | Show Fail2Ban section even when `FAIL2BAN_INFO="0"` |
 | `SHOWFAIL2BAN_IPS` | `1` | List banned IPs per jail (no DNS, no delay) |
 | `RESOLVEFAIL2BAN_IPS` | `1` | Resolve banned IPs via reverse DNS (parallel, requires `SHOWFAIL2BAN_IPS="1"`) |
 | `FAIL2BAN_MAX_IPS` | `10` | Maximum number of banned IPs listed per jail (`0` = no limit) |
 | `MAINTENANCE_INFO` | `1` | Maintenance log entries |
 | `MAINTENANCE_ALWAYS` | `0` | Show Maintenance section even when `MAINTENANCE_INFO="0"` |
-| `WEATHER_INFO` | `1` | Weather via wttr.in (auto-hidden if curl unavailable or fetch fails) |
+| `WEATHER_INFO` | `1` | Weather via wttr.in (auto-hidden if the fetch fails; notice if `curl` is missing) |
 | `WEATHER_ALWAYS` | `0` | Always show Weather section, even if fetch fails (`= unavailable`) |
 | `WEATHER_CITY` | *(empty)* | City for weather lookup — empty = auto-detect from server IP |
 | `WEATHER_CACHE_HOURS` | `1` | Hours before weather data is re-fetched (0 = always live) |
@@ -224,6 +255,28 @@ Each section has an `_INFO` toggle and an optional `_ALWAYS` override:
 | `VERSION_INFO` | `1` | Version banner |
 
 `1` = enabled, `0` = disabled.
+
+### Output layout
+
+Every line of every section has the form `label = value`. Labels are right-aligned in a 17-character column, so the `=` is in the same column across the whole MOTD; long values wrap and continue below the value column.
+
+Where the label is data rather than a fixed text, it is used as-is:
+
+| Section | Label | Value |
+|---|---|---|
+| Storage Info | mount point | utilization bar, used / total size, filesystem type |
+| Network Interfaces | interface name | state and link speed |
+| Failed Services | unit name | `failed` |
+| Fail2Ban | jail name, then each banned IP | number of banned IPs, then the reverse DNS name (`--` if none) |
+| Maintenance Information | `#n` — the line number used by `--rmlog` | timestamp and note |
+
+If such a label is longer than the column (a long mount point or unit name, an IPv6 address), the column is widened for that section only.
+
+### Weather and outbound requests
+
+The Weather section is enabled by default and is the only part of dynmotd that contacts an external service: at most once per `WEATHER_CACHE_HOURS` it sends an HTTP request to `wttr.in`. With an empty `WEATHER_CITY` the service derives the location from the server's public IP address. Set `WEATHER_INFO="0"` to disable it.
+
+If Fail2Ban reverse lookups are enabled (`RESOLVEFAIL2BAN_IPS="1"`), banned addresses are additionally resolved through the system's DNS resolver.
 
 ### Section display order
 
