@@ -247,6 +247,8 @@ Sections are rendered in this fixed order:
 LIST_LOG_ENTRY="2"      # number of log lines shown in the MOTD
 ```
 
+The MOTD shows the most recent entries. The number in front of each entry is its line number in the log, as used by `--rmlog`.
+
 ### Update cache
 
 ```bash

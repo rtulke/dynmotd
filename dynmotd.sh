@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.19.1"
+VERSION="dynmotd v1.19.2"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -41,7 +41,7 @@ WEATHER_CACHE_HOURS="1"     # hours before weather data is refreshed (0 = always
 WEATHER_UNITS=""            # unit system: m=metric  u=USCS  M=wind in m/s  (empty=wttr.in default)
 VERSION_INFO="1"            # version banner
 
-## number of maintenance log lines shown in MAINTENANCE_INFO
+## number of most recent maintenance log entries shown in MAINTENANCE_INFO
 LIST_LOG_ENTRY="2"
 
 ## hours before the cached update count is refreshed (0 = always live)
@@ -1190,8 +1190,10 @@ function show_maintenance_info() {
         return
     fi
 
+    ## Newest entries (the log is append-only, so they are at the end).
+    ## Numbering comes from listlog and stays valid for --rmlog.
     local entries
-    entries=$(listlog | head -n "${LIST_LOG_ENTRY}")
+    entries=$(listlog | tail -n "${LIST_LOG_ENTRY}")
 
     if [ -n "$entries" ]; then
         printf '%s\n' "$entries"
