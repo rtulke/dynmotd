@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.19.3"
+VERSION="dynmotd v1.19.4"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -687,6 +687,21 @@ function uninstall() {
 
 #### Output sections
 
+## Layout convention for all sections: every line is "label = value". Labels
+## are right-aligned in a LABEL_WIDTH-char column, so every = sits in the same
+## column across the whole MOTD and values start at column LABEL_WIDTH + 3.
+## A section whose labels are data (mount points, unit names, IP addresses) may
+## widen its own column when one of them does not fit.
+LABEL_WIDTH=17
+
+
+## Prints one "label = value" line in the common layout.
+## Usage: _kv <label> <value> [value color=F3] [label width=LABEL_WIDTH]
+function _kv() {
+    printf "${F1}%${4:-$LABEL_WIDTH}s ${F2}= ${3:-$F3}%s\n" "$1" "$2"
+}
+
+
 ## Generates a section header with consistent 79-char visible width.
 ## Fixed parts: "============[ " (14) + " ]" (2) = 16 chars
 ## Trailing padding = 63 - ${#label}
@@ -766,7 +781,7 @@ function show_system_info() {
     [ -z "$IPV4" ] && IPV4="Unknown"
     ## Only add IPv6 line if addresses are present
     IPV6_LINE=""
-    [ -n "$IPV6" ] && IPV6_LINE="\n${F1}      Address v6 ${F2}= ${F3}${IPV6}"
+    [ -n "$IPV6" ] && IPV6_LINE="\n${F1}       Address v6 ${F2}= ${F3}${IPV6}"
 
     UNAME=$(uname -r)
 
@@ -849,16 +864,16 @@ function show_system_info() {
 
     echo -e "
 $(_section_header "System Info")
-${F1}        Hostname ${F2}= ${F3}${HOSTNAME}
-${F1}      Address v4 ${F2}= ${F3}${IPV4}${IPV6_LINE}
-${F1}          Kernel ${F2}= ${F3}${UNAME}
-${F1}    Distribution ${F2}= ${F3}${DISTRIBUTION} ${PLATFORM}
-${F1}          Uptime ${F2}= ${F3}${UPTIME}
-${F1}    Load Average ${F2}= ${F3}${LOADAVG} ${F1}(1m 5m 15m)
-${F1}             CPU ${F2}= ${F3}${CPUS} x ${CPUMODEL}
-${F1}          Memory ${F2}= $(_progress_bar "${MEMUSED}" "${MEMMAX}" "${bar_width}")  ${F3}${MEMAVAIL} MB free of ${MEMMAX} MB
-${F1}     Swap Memory ${F2}= $(_progress_bar "${SWAPUSED}" "${SWAPMAX}" "${bar_width}")  ${F3}${SWAPFREE} MB free of ${SWAPMAX} MB
-${F1}       Processes ${F2}= ${F3}${PROCCOUNT} of ${PROCMAX} MAX${F1}"
+${F1}         Hostname ${F2}= ${F3}${HOSTNAME}
+${F1}       Address v4 ${F2}= ${F3}${IPV4}${IPV6_LINE}
+${F1}           Kernel ${F2}= ${F3}${UNAME}
+${F1}     Distribution ${F2}= ${F3}${DISTRIBUTION} ${PLATFORM}
+${F1}           Uptime ${F2}= ${F3}${UPTIME}
+${F1}     Load Average ${F2}= ${F3}${LOADAVG} ${F1}(1m 5m 15m)
+${F1}              CPU ${F2}= ${F3}${CPUS} x ${CPUMODEL}
+${F1}           Memory ${F2}= $(_progress_bar "${MEMUSED}" "${MEMMAX}" "${bar_width}")  ${F3}${MEMAVAIL} MB free of ${MEMMAX} MB
+${F1}      Swap Memory ${F2}= $(_progress_bar "${SWAPUSED}" "${SWAPMAX}" "${bar_width}")  ${F3}${SWAPFREE} MB free of ${SWAPMAX} MB
+${F1}        Processes ${F2}= ${F3}${PROCCOUNT} of ${PROCMAX} MAX${F1}"
 }
 
 
@@ -1017,27 +1032,16 @@ function show_storage_info() {
 
     echo -e "\n$(_section_header "Storage Info")"
 
-    ## bar_visible = bar_width + 7  ([ + width + ] + space + 3-digit pct + %)
     local bar_width
     bar_width=$(_bar_width)
-    local bar_visible=$(( bar_width + 7 ))
-
-    ## Header line — aligned with data rows
-    printf "${F1}%-${bar_visible}s  %-7s  %6s         %6s   %s\n" \
-        "Utilization" "Type" "Used" "Size" "Mount"
 
     ## Exclude virtual/overlay filesystems; extract pct + fields via awk;
     ## sort descending by usage percentage; draw one bar per filesystem.
     ## -P keeps every filesystem on one line (long device names would wrap),
     ## the timeout protects against hanging network mounts, and the mount
     ## point is rebuilt from all remaining fields so paths with spaces survive.
-    local rows=0 pct type size used mount bar
-    while IFS='|' read -r pct type size used _ mount; do
-        bar=$(_progress_bar "$pct" "100" "$bar_width")
-        printf "%s  ${F1}%-7s${F3}  %6s ${F1}used of${F3} %6s   ${F1}%s\n" \
-            "$bar" "$type" "$used" "$size" "$mount"
-        rows=$(( rows + 1 ))
-    done < <(_timeout 5 env LC_ALL=C df -hTP 2>/dev/null \
+    local -a rows
+    mapfile -t rows < <(_timeout 5 env LC_ALL=C df -hTP 2>/dev/null \
         | awk 'NR > 1 && !/docker|tmpfs|devtmpfs|squashfs|udev|overlay|shm|cgroupfs|efivarfs/ {
             pct=$6; gsub(/%/,"",pct)
             mount=$7; for (i=8; i<=NF; i++) mount = mount " " $i
@@ -1045,7 +1049,26 @@ function show_storage_info() {
         }' \
         | sort -t'|' -k1,1 -rn)
 
-    (( rows == 0 )) && printf "${F4}No filesystem data available (df failed or timed out)\n"
+    if (( ${#rows[@]} == 0 )); then
+        _kv "Filesystems" "no data available (df failed or timed out)" "$F4"
+        printf "${F1}"
+        return
+    fi
+
+    ## The mount point is the label; a mount point longer than the label
+    ## column widens it for the whole section so the = stays in one column.
+    local row pct type size used mount bar field=$LABEL_WIDTH
+    for row in "${rows[@]}"; do
+        mount="${row##*|}"
+        (( ${#mount} > field )) && field=${#mount}
+    done
+
+    for row in "${rows[@]}"; do
+        IFS='|' read -r pct type size used _ mount <<< "$row"
+        bar=$(_progress_bar "$pct" "100" "$bar_width")
+        printf "${F1}%${field}s ${F2}= %s  ${F3}%5s ${F1}used of${F3} %5s  ${F1}%s\n" \
+            "$mount" "$bar" "$used" "$size" "$type"
+    done
 
     printf "${F1}"
 }
@@ -1155,27 +1178,24 @@ function show_user_info() {
 function show_environment_info() {
     [ "$ENVIRONMENT_INFO" = "1" ] || return
 
+    echo -e "\n$(_section_header "Environment Data")"
+
     ## Sections run as background jobs without a terminal on stdin, so the
     ## interactive setup cannot run here — show_info() does that up front.
     _load_env
     case $? in
-        0) ;;
+        0)
+            _kv "Function"      "$SYSFUNCTION"
+            _kv "Environment"   "$SYSENV"
+            _kv "Service Level" "$SYSSLA"
+            ;;
         2)
-            echo -e "\n$(_section_header "Environment Data")"
-            printf "${F4}%s is not owned by root — skipping\n${F1}" "$ENVFILE"
-            return
+            _kv "Environment" "${ENVFILE} is not owned by root — skipped" "$F4"
             ;;
         *)
-            echo -e "\n$(_section_header "Environment Data")"
-            printf "${F4}Not configured — run: %s --config\n${F1}" "$DYNMOTD_FILENAME"
-            return
+            _kv "Environment" "not configured — run: ${DYNMOTD_FILENAME} --config" "$F4"
             ;;
     esac
-
-    echo -e "\n$(_section_header "Environment Data")"
-    printf "${F1}%17s ${F2}= ${F3}%s\n" "Function"      "$SYSFUNCTION"
-    printf "${F1}%17s ${F2}= ${F3}%s\n" "Environment"   "$SYSENV"
-    printf "${F1}%17s ${F2}= ${F3}%s\n" "Service Level" "$SYSSLA"
     printf "${F1}"
 }
 
@@ -1186,19 +1206,24 @@ function show_maintenance_info() {
     echo -e "\n$(_section_header "Maintenance Information")"
 
     if [ ! -f "$MAINLOG" ]; then
-        printf "${F4}No maintenance log found at %s\n${F1}" "$MAINLOG"
+        _kv "Log Entries" "no log file at ${MAINLOG}" "$F4"
+        printf "${F1}"
         return
     fi
 
     ## Newest entries (the log is append-only, so they are at the end).
-    ## Numbering comes from listlog and stays valid for --rmlog.
-    local entries
-    entries=$(listlog | tail -n "${LIST_LOG_ENTRY}")
+    ## The label "#n" is the line number in the log, as used by --rmlog.
+    local total first n=0 line
+    total=$(grep -c '' "$MAINLOG")
+    first=$(( total - LIST_LOG_ENTRY + 1 ))
 
-    if [ -n "$entries" ]; then
-        printf '%s\n' "$entries"
+    if (( total == 0 )); then
+        _kv "Log Entries" "none — add one with: ${DYNMOTD_FILENAME} -a \"note\""
     else
-        printf "${F1}No entries — add one with: %s -a \"note\"\n" "$DYNMOTD_FILENAME"
+        while IFS= read -r line || [ -n "$line" ]; do
+            n=$(( n + 1 ))
+            (( n >= first )) && _kv "#${n}" "$line"
+        done < "$MAINLOG"
     fi
     printf "${F1}"
 }
@@ -1225,7 +1250,7 @@ function show_fail2ban_info() {
     if ! command -v fail2ban-client >/dev/null 2>&1; then
         [ "$FAIL2BAN_ALWAYS" = "1" ] || return
         echo -e "\n$(_section_header "Fail2Ban")"
-        printf "${F1}    Fail2Ban ${F2}= ${F3}not installed\n"
+        _kv "Fail2Ban" "not installed"
         printf "${F1}"
         return
     fi
@@ -1241,66 +1266,74 @@ function show_fail2ban_info() {
             | tr ',' '\n' | tr -d ' \t' | grep -v '^$'
     )
 
+    echo -e "\n$(_section_header "Fail2Ban")"
+
     if [ ${#jails[@]} -eq 0 ]; then
-        echo -e "
-$(_section_header "Fail2Ban")
-${F4}fail2ban is not running or no active jails${F1}"
+        _kv "Fail2Ban" "not running or no active jails" "$F4"
+        printf "${F1}"
         return
     fi
 
-    ## One status call per jail delivers both the counter and the IP list
+    ## One status call per jail delivers both the counter and the IP list.
+    ## Only syntactically valid addresses are kept.
     for jail in "${jails[@]}"; do
         status=$(_timeout 5 fail2ban-client status "$jail" 2>/dev/null)
         banned=$(awk '/Currently banned:/ {print $NF}' <<< "$status")
         banned=$(_to_int "$banned" 0)
         banned_total=$(( banned_total + banned ))
         summary+="${jail}:${banned}  "
-        jail_ips+=("$(sed -n 's/.*Banned IP list:[[:space:]]*//p' <<< "$status")")
+        jail_ips+=("$(sed -n 's/.*Banned IP list:[[:space:]]*//p' <<< "$status" \
+            | tr -s '[:space:]' '\n' | grep -E '^[0-9A-Fa-f.:]+$' | tr '\n' ' ')")
     done
     summary="${summary%  }"     # strip trailing spaces
 
-    echo -e "
-$(_section_header "Fail2Ban")
-${F1}    Total Banned ${F2}= ${F3}${banned_total}
-${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
+    ## A busy jail can hold hundreds of addresses — list at most
+    ## FAIL2BAN_MAX_IPS of them per jail (0 = no limit).
+    ## Jail names and addresses are the labels of this section; anything
+    ## longer than the label column (IPv6) widens it for the whole section.
+    local idx ip field=$LABEL_WIDTH
+    local -a ips shown
+    if [ "$SHOWFAIL2BAN_IPS" = "1" ]; then
+        for idx in "${!jails[@]}"; do
+            read -ra ips <<< "${jail_ips[$idx]}"
+            (( ${#ips[@]} > 0 )) || continue
+            (( FAIL2BAN_MAX_IPS > 0 )) && ips=("${ips[@]:0:FAIL2BAN_MAX_IPS}")
+            (( ${#jails[$idx]} > field )) && field=${#jails[$idx]}
+            [ "$RESOLVEFAIL2BAN_IPS" = "1" ] || continue
+            for ip in "${ips[@]}"; do
+                (( ${#ip} > field )) && field=${#ip}
+            done
+        done
+    fi
+
+    _kv "Total Banned" "$banned_total" "" "$field"
+    _kv "Active Jails" "$summary"      "" "$field"
 
     ## Optional: list banned IPs per jail with reverse DNS
-    [ "$SHOWFAIL2BAN_IPS" = "1" ] || return
+    if [ "$SHOWFAIL2BAN_IPS" != "1" ]; then
+        printf "${F1}"
+        return
+    fi
 
-    local idx ip
     for idx in "${!jails[@]}"; do
         jail="${jails[$idx]}"
+        read -ra ips <<< "${jail_ips[$idx]}"
+        (( ${#ips[@]} > 0 )) || continue
 
-        local -a ips=() shown=()
-        mapfile -t ips < <(
-            tr -s '[:space:]' '\n' <<< "${jail_ips[$idx]}" | grep -E '^[0-9A-Fa-f.:]+$'
-        )
-        [ ${#ips[@]} -eq 0 ] && continue
-
-        printf "\n${F1} %s ${F2}(${F3}%d ${F1}IPs${F2}):\n" "$jail" "${#ips[@]}"
-
-        ## A busy jail can hold hundreds of addresses — list at most
-        ## FAIL2BAN_MAX_IPS of them (0 = no limit).
         if (( FAIL2BAN_MAX_IPS > 0 && ${#ips[@]} > FAIL2BAN_MAX_IPS )); then
             shown=("${ips[@]:0:FAIL2BAN_MAX_IPS}")
         else
             shown=("${ips[@]}")
         fi
-
-        ## IPs are right-aligned in the 16-char label column, so their = sits
-        ## exactly below the = of "Total Banned" / "Active Jails". Only IPv6
-        ## addresses longer than the column widen it (for the whole jail).
-        local ip_field=16
-        for ip in "${shown[@]}"; do
-            (( ${#ip} > ip_field )) && ip_field=${#ip}
-        done
+        local more=$(( ${#ips[@]} - ${#shown[@]} ))
 
         ## Resolve all IPs in parallel; one result file per IP inside a private
         ## temp directory preserves the order. Without a temp directory the
-        ## list is printed unresolved.
+        ## addresses are listed unresolved.
         local rdir=""
         [ "$RESOLVEFAIL2BAN_IPS" = "1" ] && rdir=$(mktemp -d 2>/dev/null)
 
+        echo
         if [ -n "$rdir" ]; then
             local n=0 name
             for ip in "${shown[@]}"; do
@@ -1308,22 +1341,21 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
                 n=$(( n + 1 ))
             done
             wait
+
+            _kv "$jail" "${#ips[@]} banned" "" "$field"
             n=0
             for ip in "${shown[@]}"; do
                 name=""
                 [ -f "${rdir}/${n}" ] && IFS= read -r name < "${rdir}/${n}"
-                printf "${F3}%${ip_field}s ${F2}= ${F3}%s\n" "$ip" "${name:---}"
+                _kv "$ip" "${name:---}" "" "$field"
                 n=$(( n + 1 ))
             done
             rm -rf "$rdir"
         else
-            for ip in "${shown[@]}"; do
-                printf "${F3}%${ip_field}s\n" "$ip"
-            done
+            _kv "$jail" "$(_wrap_list $(( field + 3 )) "," "${shown[@]}")" "" "$field"
         fi
 
-        (( ${#ips[@]} > ${#shown[@]} )) \
-            && printf "${F1} ... and %d more\n" $(( ${#ips[@]} - ${#shown[@]} ))
+        (( more > 0 )) && printf "${F1}%$(( field + 3 ))s... and %d more\n" "" "$more"
     done
     printf "${F1}"
 }
@@ -1335,8 +1367,6 @@ function show_network_info() {
 
     echo -e "\n$(_section_header "Network Interfaces")"
 
-    printf "${F1}  %-14s %-10s %s\n" "Interface" "State" "Speed"
-
     local iface state
     while read -r iface state; do
         ## VLAN and container interfaces are listed as "name@parent"
@@ -1346,7 +1376,7 @@ function show_network_info() {
         [ "$iface" = "lo" ] && continue
         [[ "$iface" == veth* ]] && continue
 
-        local speed="--"
+        local speed=""
         local speed_raw
         speed_raw=$(cat "/sys/class/net/${iface}/speed" 2>/dev/null)
         if [[ "$speed_raw" =~ ^[0-9]+$ ]] && (( speed_raw > 0 )); then
@@ -1356,8 +1386,13 @@ function show_network_info() {
         local state_color="$F3"
         [ "$state" != "UP" ] && state_color="$F4"
 
-        printf "${F3}  %-14s ${state_color}%-10s ${F3}%s\n" \
-            "$iface" "$state" "$speed"
+        ## The interface name is the label: "<iface> = <state>  <speed>"
+        if [ -n "$speed" ]; then
+            printf "${F1}%${LABEL_WIDTH}s ${F2}= ${state_color}%-8s ${F3}%s\n" \
+                "$iface" "$state" "$speed"
+        else
+            _kv "$iface" "$state" "$state_color"
+        fi
 
     done < <(ip -brief link show 2>/dev/null \
         | awk '{print $1, toupper($2)}')
@@ -1395,23 +1430,22 @@ function show_failed_services_info() {
     if [ ${#units[@]} -eq 0 ]; then
         [ "$FAILED_SERVICES_ALWAYS" = "1" ] || return
         echo -e "\n$(_section_header "Failed Services")"
-        printf "${F1}  Failed Services ${F2}= ${F3}none\n"
+        _kv "Failed Services" "none"
         printf "${F1}"
         return
     fi
 
-    echo -e "\n$(_section_header "Failed Services")"
-    printf "${F1}  Failed Services ${F2}= ${F4}%d\n" "${#units[@]}"
-
-    ## Unit names are right-aligned in the 17-char label column, so their =
-    ## sits below the = of the counter line; longer names widen the column.
-    local field=17 u
+    ## Unit names are the labels; a name longer than the label column widens
+    ## it for the whole section so the = stays in one column.
+    local field=$LABEL_WIDTH u
     for u in "${units[@]}"; do
         (( ${#u} > field )) && field=${#u}
     done
 
+    echo -e "\n$(_section_header "Failed Services")"
+    _kv "Failed Services" "${#units[@]}" "$F4" "$field"
     for u in "${units[@]}"; do
-        printf "${F4}%${field}s ${F2}= ${F4}failed\n" "$u"
+        _kv "$u" "failed" "$F4" "$field"
     done
     printf "${F1}"
 }
@@ -1472,7 +1506,7 @@ function show_weather_info() {
     if [ -z "$weather" ]; then
         [ "$WEATHER_ALWAYS" = "1" ] || return
         echo -e "\n$(_section_header "Weather")"
-        printf "${F1}         Weather ${F2}= ${F4}unavailable\n"
+        printf "${F1}          Weather ${F2}= ${F4}unavailable\n"
         printf "${F1}"
         return
     fi
@@ -1481,11 +1515,11 @@ function show_weather_info() {
     IFS='|' read -r loc condition temp feels humidity wind <<< "$weather"
 
     echo -e "\n$(_section_header "Weather")"
-    printf "${F1}        Location ${F2}= ${F3}%s\n" "$loc"
-    printf "${F1}         Weather ${F2}= ${F3}%s\n" "$condition"
-    printf "${F1}     Temperature ${F2}= ${F3}%s ${F1}(feels like ${F3}%s${F1})\n" "$temp" "$feels"
-    printf "${F1}        Humidity ${F2}= ${F3}%s\n" "$humidity"
-    printf "${F1}            Wind ${F2}= ${F3}%s\n" "$wind"
+    printf "${F1}         Location ${F2}= ${F3}%s\n" "$loc"
+    printf "${F1}          Weather ${F2}= ${F3}%s\n" "$condition"
+    printf "${F1}      Temperature ${F2}= ${F3}%s ${F1}(feels like ${F3}%s${F1})\n" "$temp" "$feels"
+    printf "${F1}         Humidity ${F2}= ${F3}%s\n" "$humidity"
+    printf "${F1}             Wind ${F2}= ${F3}%s\n" "$wind"
     printf "${F1}"
 }
 
