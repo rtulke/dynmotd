@@ -1,0 +1,76 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax
+        run: bash -n dynmotd.sh
+
+      # SC2053: the unquoted pattern in _flag is intentional (WARN_IGNORE wildcards)
+      # SC2178: false positives for names used as array in one function and string in another
+      - name: ShellCheck
+        run: shellcheck -S warning -e SC2053,SC2178 dynmotd.sh
+
+      - name: Checksum file is current (needed by --self-update)
+        run: sha256sum -c dynmotd.sh.sha256
+
+  distro:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          # old: Bash 4.1 - 4.4, old coreutils / iproute2 / procps
+          - centos:6
+          - centos:7
+          - debian:8
+          - ubuntu:14.04
+          - ubuntu:16.04
+          - debian:10
+          # current
+          - debian:12
+          - debian:13
+          - ubuntu:24.04
+          - rockylinux:9
+          - fedora:latest
+          - opensuse/leap:15
+          - archlinux:latest
+          # busybox userland, musl
+          - alpine:3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run dynmotd in ${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD":/src -e IMAGE="${{ matrix.image }}" "${{ matrix.image }}" \
+            sh -c 'command -v bash >/dev/null 2>&1 || apk add --no-cache bash >/dev/null; bash /src/.github/test.sh'
+
+      - name: Check JSON and dashboard output
+        run: |
+          python3 - <<'PY'
+          import json, re, sys
+
+          out = ".ci-out/"
+          data = json.load(open(out + "json.out", encoding="utf-8"))
+          assert data["sections"], "no sections in JSON output"
+          for section in data["sections"]:
+              for item in section["items"]:
+                  assert item["label"], "empty label in " + section["name"]
+          print("json: %d sections, %d warnings" % (len(data["sections"]), len(data["warnings"])))
+
+          ansi = re.compile(r"\x1b\[[0-9;]*m")
+          for name, corners in (("dashboard.out", "┌│└"), ("dashboard-ascii.out", "+|")):
+              rows = [ansi.sub("", line.rstrip("\n")) for line in open(out + name, encoding="utf-8")]
+              boxes = [row for row in rows if row[:1] in corners]
+              widths = sorted(set(len(row) for row in boxes))
+              assert boxes, name + ": no boxes"
+              assert len(widths) == 1, "%s: ragged box edges, widths %s" % (name, widths)
+              print("%s: %d box rows, all %d columns wide" % (name, len(boxes), widths[0]))
+          PY

@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.20.0"
+VERSION="dynmotd v2.0.0"
 
 ## data directory: configuration, maintenance log and caches
 DYNMOTDDIR="/root/.dynmotd"
@@ -35,6 +35,12 @@ DYNMOTD_FILENAME="dynmotd"                # binary name
 
 ## general
 MOTD_MODE="full"
+MOTD_LAYOUT="classic"
+MOTD_NOTE=""
+SECTION_ORDER=""
+WARN_IGNORE=""
+USER_MOTD="0"
+SELF_UPDATE_URL="https://raw.githubusercontent.com/rtulke/dynmotd/master/dynmotd.sh"
 COLOR_SCHEME="dot"
 COLOR_LABEL="grey"
 COLOR_BORDER="pink"
@@ -47,6 +53,7 @@ SYSENV=""
 SYSSLA=""
 
 ## sections
+CHANGES_INFO="1"
 SYSTEM_INFO="1"
 TIMESYNC_INFO="auto"
 WEATHER_INFO="1"
@@ -54,11 +61,20 @@ WEATHER_ALWAYS="0"
 WEATHER_CITY=""
 WEATHER_UNITS=""
 WEATHER_CACHE_HOURS="1"
+NEWS_INFO="auto"
+NEWS_FEED_URL=""
+NEWS_COUNT="5"
+NEWS_CACHE_HOURS="1"
 STORAGE_INFO="1"
 RAID_INFO="auto"
 ZFS_INFO="auto"
 LVM_INFO="auto"
+HARDWARE_INFO="auto"
+TEMP_WARN_CELSIUS="80"
+SMART_CACHE_HOURS="6"
 NETWORK_INFO="1"
+WIREGUARD_INFO="auto"
+WIREGUARD_MAX_PEERS="10"
 USER_INFO="1"
 SECURITY_INFO="1"
 SSH_PASSWORD_WARN="1"
@@ -66,11 +82,18 @@ LAST_LOGINS="3"
 UPDATE_INFO="1"
 UPDATE_ALWAYS="0"
 UPDATE_CACHE_HOURS="6"
+UPDATE_SECURITY_WARN="1"
 ENVIRONMENT_INFO="1"
 FAILED_SERVICES_INFO="1"
 FAILED_SERVICES_ALWAYS="0"
+WATCH_INFO="auto"
+WATCH_SERVICES=""
+WATCH_PORTS=""
 DOCKER_INFO="auto"
 DOCKER_MAX_LIST="10"
+MAILQ_INFO="auto"
+MAILQ_CONTAINER=""
+MAILQ_WARN_COUNT="50"
 CERT_INFO="auto"
 CERT_FILES=""
 CERT_WARN_DAYS="20"
@@ -78,6 +101,7 @@ CERT_MAX_LIST="10"
 BACKUP_INFO="auto"
 BACKUP_PATHS=""
 BACKUP_MAX_AGE_HOURS="26"
+KERNEL_LOG_INFO="auto"
 FAIL2BAN_INFO="1"
 FAIL2BAN_ALWAYS="0"
 SHOWFAIL2BAN_IPS="1"
@@ -124,11 +148,11 @@ F3=${C_LGREEN}
 F4=${C_RED}
 
 
-## root check — use id -u, not $USER (more reliable in su/sudo/cron contexts)
-if [[ "$(id -u)" -ne 0 ]]; then
-    cat /etc/motd 2>/dev/null || echo "No message of the day available"
-    exit 0
-fi
+## Root gets the full MOTD and all management commands. Users without root
+## get the reduced user view if it is switched on (USER_MOTD), otherwise the
+## static /etc/motd. Use id -u, not $USER (unreliable under su/sudo/cron).
+_IS_ROOT=0
+[ "$(id -u)" -eq 0 ] && _IS_ROOT=1
 
 
 #### Distribution Detection
@@ -406,6 +430,45 @@ function _config_template() {
 # Override for a single run: dynmotd --full / dynmotd --compact
 MOTD_MODE="${MOTD_MODE}"
 
+# How the full view is arranged.
+#   "classic"    one section below the other, 79 columns wide
+#   "dashboard"  every section in a box, the boxes side by side in as many
+#                columns as the terminal has room for (one column on a
+#                narrow terminal)
+#   "auto"       dashboard if at least two boxes fit side by side
+#                (about 166 columns), otherwise classic
+# Override for a single run: dynmotd --classic / dynmotd --dashboard
+MOTD_LAYOUT="${MOTD_LAYOUT}"
+
+# A notice shown at the very top to everyone who logs in, for example
+# "No reboots before 22:00, see ticket 4711". Empty: no notice.
+MOTD_NOTE="${MOTD_NOTE}"
+
+# Order of the sections, as a list of section names separated by spaces.
+# Sections you leave out follow in their usual order, so new sections of a
+# later version still show up. Empty: the built-in order.
+# Names: dynmotd --section   (without a name it prints the list)
+# Example: SECTION_ORDER="system storage update fail2ban"
+SECTION_ORDER="${SECTION_ORDER}"
+
+# Warnings you know about and do not want to be reminded of, by the label in
+# front of the "=", separated by commas. Wildcards are allowed.
+# An ignored line is still printed in the full view, but it no longer counts:
+# not in compact mode, not in "Since Last Login", not in --json.
+# Example: WARN_IGNORE="ghost.service, SSH Passwords, syncthing@*"
+WARN_IGNORE="${WARN_IGNORE}"
+
+# What users without root see when they log in.
+#   "0"  the static /etc/motd, as before
+#   "1"  a reduced dynmotd: notice, system info, storage, network and the
+#        host description. Nothing about other users, logins or services.
+#        The settings they need are copied to /etc/dynmotd-user.conf.
+USER_MOTD="${USER_MOTD}"
+
+# Where dynmotd --self-update downloads the script from. The file next to
+# it with the extension .sha256 must hold its SHA-256 checksum. https only.
+SELF_UPDATE_URL="${SELF_UPDATE_URL}"
+
 # Color scheme.
 #   "dot"        grey labels, pink borders, green values (default)
 #   "hacker"     all green
@@ -425,6 +488,16 @@ COLOR_LABEL="${COLOR_LABEL}"
 COLOR_BORDER="${COLOR_BORDER}"
 COLOR_VALUE="${COLOR_VALUE}"
 COLOR_WARN="${COLOR_WARN}"
+
+
+##############################################################################
+# Since Last Login
+##############################################################################
+
+# What changed since the previous login: new failed logins, new updates,
+# warnings that appeared and warnings that are gone. The state is remembered
+# per host in last_state; only interactive logins count. "1" or "0".
+CHANGES_INFO="${CHANGES_INFO}"
 
 
 ##############################################################################
@@ -490,6 +563,26 @@ WEATHER_CACHE_HOURS="${WEATHER_CACHE_HOURS}"
 
 
 ##############################################################################
+# News
+##############################################################################
+
+# The latest headlines of an RSS or Atom feed. Like the weather this
+# contacts an external server: one request per NEWS_CACHE_HOURS.
+# Needs curl. "1", "0" or "auto" (shown when NEWS_FEED_URL is set).
+NEWS_INFO="${NEWS_INFO}"
+
+# Address of the feed, starting with http:// or https://. Example:
+#   NEWS_FEED_URL="https://www.tagesschau.de/index~rss2.xml"
+NEWS_FEED_URL="${NEWS_FEED_URL}"
+
+# Number of headlines shown.
+NEWS_COUNT="${NEWS_COUNT}"
+
+# Hours before the feed is fetched again. 0 fetches on every login.
+NEWS_CACHE_HOURS="${NEWS_CACHE_HOURS}"
+
+
+##############################################################################
 # Storage
 ##############################################################################
 
@@ -513,6 +606,17 @@ ZFS_INFO="${ZFS_INFO}"
 # LVM volume groups with size and free space. Needs vgs. "1", "0" or "auto".
 LVM_INFO="${LVM_INFO}"
 
+# Section "Hardware": the highest temperature of all sensors and the SMART
+# health of the disks (needs smartctl). Virtual machines usually have
+# neither. "1", "0" or "auto" (shown when there is something to show).
+HARDWARE_INFO="${HARDWARE_INFO}"
+
+# Temperature in degrees Celsius from which the line is a warning. 0 = never.
+TEMP_WARN_CELSIUS="${TEMP_WARN_CELSIUS}"
+
+# Hours before the disks are asked for their SMART health again.
+SMART_CACHE_HOURS="${SMART_CACHE_HOURS}"
+
 
 ##############################################################################
 # Network Interfaces
@@ -521,6 +625,13 @@ LVM_INFO="${LVM_INFO}"
 # State and link speed of every interface (read from /sys/class/net).
 # "1" or "0".
 NETWORK_INFO="${NETWORK_INFO}"
+
+# WireGuard interfaces with their peers and the time of the last handshake.
+# Keys are never shown. Needs wg. "1", "0" or "auto".
+WIREGUARD_INFO="${WIREGUARD_INFO}"
+
+# Maximum number of peers listed per interface. 0 = no limit.
+WIREGUARD_MAX_PEERS="${WIREGUARD_MAX_PEERS}"
 
 
 ##############################################################################
@@ -561,6 +672,10 @@ UPDATE_CACHE_HOURS="${UPDATE_CACHE_HOURS}"
 # Number of pending updates from which the count is a warning. 0 = never.
 UPDATE_WARN_COUNT="${UPDATE_WARN_COUNT}"
 
+# "1" makes any pending security update a warning. Security updates are
+# counted separately on Debian and Ubuntu (apt) only.
+UPDATE_SECURITY_WARN="${UPDATE_SECURITY_WARN}"
+
 
 ##############################################################################
 # Services
@@ -573,6 +688,20 @@ FAILED_SERVICES_INFO="${FAILED_SERVICES_INFO}"
 # "1" shows the section (as "none") even when nothing has failed.
 FAILED_SERVICES_ALWAYS="${FAILED_SERVICES_ALWAYS}"
 
+# Section "Watchlist": services and TCP ports that must be up. Unlike
+# "Failed Services" this also notices a service that was stopped cleanly.
+# "1", "0" or "auto" (shown when one of the two lists is set).
+WATCH_INFO="${WATCH_INFO}"
+
+# Service names, separated by spaces. With systemd these are unit names
+# ("nginx" means nginx.service); without systemd, process names.
+# Example: WATCH_SERVICES="nginx postfix sshd"
+WATCH_SERVICES="${WATCH_SERVICES}"
+
+# TCP ports that something must be listening on, separated by spaces.
+# Example: WATCH_PORTS="22 25 443"
+WATCH_PORTS="${WATCH_PORTS}"
+
 # Docker containers: how many are running and stopped; unhealthy,
 # restarting and crashed containers are listed by name as warnings.
 # Needs docker. "1", "0" or "auto".
@@ -580,6 +709,20 @@ DOCKER_INFO="${DOCKER_INFO}"
 
 # Maximum number of problem containers listed by name. 0 = no limit.
 DOCKER_MAX_LIST="${DOCKER_MAX_LIST}"
+
+# Section "Mail Queue": number of messages waiting in the mail server.
+# Found automatically: Postfix or Exim on this host, or Postfix in a Docker
+# container (for example mailcow). "1", "0" or "auto" (shown when a mail
+# server is found).
+MAILQ_INFO="${MAILQ_INFO}"
+
+# Name of the Docker container that runs Postfix. Empty: the first running
+# container with "postfix" in its name whose queue can be read. Setting a
+# name also skips the check for a mail server on the host itself.
+MAILQ_CONTAINER="${MAILQ_CONTAINER}"
+
+# Number of queued messages from which the line is a warning. 0 = never.
+MAILQ_WARN_COUNT="${MAILQ_WARN_COUNT}"
 
 
 ##############################################################################
@@ -623,6 +766,16 @@ BACKUP_PATHS="${BACKUP_PATHS}"
 # A path whose newest file is older than this many hours is a warning.
 # 0 = never warn.
 BACKUP_MAX_AGE_HOURS="${BACKUP_MAX_AGE_HOURS}"
+
+
+##############################################################################
+# Kernel log
+##############################################################################
+
+# Out-of-memory kills and kernel errors since boot (from dmesg). Hidden
+# while there are none. Out-of-memory kills are a warning.
+# Needs dmesg. "1", "0" or "auto".
+KERNEL_LOG_INFO="${KERNEL_LOG_INFO}"
 
 
 ##############################################################################
@@ -790,20 +943,23 @@ function _sanitize_config() {
                UPDATE_INFO MAINTENANCE_INFO VERSION_INFO WEATHER_ALWAYS \
                UPDATE_ALWAYS FAILED_SERVICES_ALWAYS FAIL2BAN_ALWAYS \
                MAINTENANCE_ALWAYS SHOWFAIL2BAN_IPS RESOLVEFAIL2BAN_IPS \
-               SSH_PASSWORD_WARN; do
+               SSH_PASSWORD_WARN CHANGES_INFO UPDATE_SECURITY_WARN USER_MOTD; do
         case "${!key}" in 0|1) ;; *) _config_reset "$key" ;; esac
     done
 
     for key in TIMESYNC_INFO WEATHER_INFO RAID_INFO ZFS_INFO LVM_INFO \
                SECURITY_INFO FAILED_SERVICES_INFO DOCKER_INFO CERT_INFO \
-               BACKUP_INFO FAIL2BAN_INFO; do
+               BACKUP_INFO FAIL2BAN_INFO NEWS_INFO HARDWARE_INFO WIREGUARD_INFO \
+               WATCH_INFO MAILQ_INFO KERNEL_LOG_INFO; do
         case "${!key}" in 0|1|auto) ;; *) _config_reset "$key" ;; esac
     done
 
     for key in WEATHER_CACHE_HOURS LAST_LOGINS UPDATE_CACHE_HOURS DOCKER_MAX_LIST \
                CERT_WARN_DAYS CERT_MAX_LIST BACKUP_MAX_AGE_HOURS FAIL2BAN_MAX_IPS LIST_LOG_ENTRY \
                DISK_WARN_PERCENT INODE_WARN_PERCENT MEMORY_WARN_PERCENT \
-               SWAP_WARN_PERCENT LOAD_WARN_PERCENT UPDATE_WARN_COUNT; do
+               SWAP_WARN_PERCENT LOAD_WARN_PERCENT UPDATE_WARN_COUNT NEWS_COUNT \
+               NEWS_CACHE_HOURS TEMP_WARN_CELSIUS SMART_CACHE_HOURS \
+               WIREGUARD_MAX_PEERS MAILQ_WARN_COUNT; do
         if [[ "${!key}" =~ ^[0-9]{1,9}$ ]]; then
             printf -v "$key" '%s' "$(( 10#${!key} ))"
         else
@@ -812,6 +968,14 @@ function _sanitize_config() {
     done
 
     case "$MOTD_MODE" in full|compact) ;; *) _config_reset MOTD_MODE ;; esac
+    case "$MOTD_LAYOUT" in classic|dashboard|auto) ;; *) _config_reset MOTD_LAYOUT ;; esac
+
+    ## Values that end up in commands or paths: only the characters they need
+    [[ "$NEWS_FEED_URL" =~ ^(https?://[^[:space:]]+)?$ ]]  || _config_reset NEWS_FEED_URL
+    [[ "$SELF_UPDATE_URL" =~ ^https://[^[:space:]]+$ ]]    || _config_reset SELF_UPDATE_URL
+    [[ "$WATCH_SERVICES" =~ ^[A-Za-z0-9@._:\ -]*$ ]]       || _config_reset WATCH_SERVICES
+    [[ "$WATCH_PORTS" =~ ^[0-9\ ]*$ ]]                     || _config_reset WATCH_PORTS
+    [[ "$MAILQ_CONTAINER" =~ ^[A-Za-z0-9_.-]*$ ]]          || _config_reset MAILQ_CONTAINER
     case "$WEATHER_UNITS" in ""|m|u|M) ;; *) _config_reset WEATHER_UNITS ;; esac
     case "$COLOR_SCHEME" in
         dot|hacker|alert|ocean|solarized|nord|amber|none|custom) ;;
@@ -823,10 +987,39 @@ function _sanitize_config() {
 
     ## Free text ends up in the terminal: no control characters
     local val
-    for key in SYSFUNCTION SYSENV SYSSLA WEATHER_CITY CERT_FILES BACKUP_PATHS; do
+    for key in SYSFUNCTION SYSENV SYSSLA WEATHER_CITY CERT_FILES BACKUP_PATHS \
+               MOTD_NOTE WARN_IGNORE SECTION_ORDER; do
         val="${!key}"
         printf -v "$key" '%s' "${val//[[:cntrl:]]/}"
     done
+
+    ## WARN_IGNORE: comma-separated label patterns, surrounding blanks removed
+    _WARN_IGNORE=()
+    local IFS=',' pattern
+    for pattern in $WARN_IGNORE; do
+        pattern="${pattern#"${pattern%%[![:space:]]*}"}"
+        pattern="${pattern%"${pattern##*[![:space:]]}"}"
+        [ -n "$pattern" ] && _WARN_IGNORE+=("$pattern")
+    done
+    IFS=$' \t\n'
+
+    ## SECTION_ORDER: the named sections first, the others in built-in order
+    SECTION_ORDER="${SECTION_ORDER//[^a-z0-9_ ]/}"
+    if [ -n "$SECTION_ORDER" ]; then
+        local known=" ${SECTIONS[*]} " name
+        local -a ordered=()
+        for name in $SECTION_ORDER; do
+            if [[ "$known" == *" ${name} "* ]]; then
+                [[ " ${ordered[*]} " == *" ${name} "* ]] || ordered+=("$name")
+            else
+                CONFIG_WARNINGS+=("SECTION_ORDER: unknown section \"${name}\"")
+            fi
+        done
+        for name in "${SECTIONS[@]}"; do
+            [[ " ${ordered[*]} " == *" ${name} "* ]] || ordered+=("$name")
+        done
+        SECTIONS=("${ordered[@]}")
+    fi
 }
 
 
@@ -876,6 +1069,7 @@ function _write_config() {
     tmp=$(mktemp "${CONFFILE}.XXXXXX" 2>/dev/null) || return 1
     if _config_template > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$CONFFILE"; then
         rm -f "$ENVFILE"
+        _write_public_config
         return 0
     fi
     rm -f "$tmp"
@@ -1151,6 +1345,7 @@ function uninstall() {
     local remove_files=()
     [ -f "$target" ]          && remove_files+=("$target")
     [ -f "$DYNMOTD_PROFILE" ] && remove_files+=("$DYNMOTD_PROFILE")
+    [ -f "$PUBLICFILE" ]      && remove_files+=("$PUBLICFILE")
 
     if [ ${#remove_files[@]} -eq 0 ] && [ ! -d "$DYNMOTDDIR" ]; then
         echo "dynmotd does not appear to be installed. Nothing to do."
@@ -1323,6 +1518,13 @@ function _kv() {
 ## Usage: _flag <label> <value>
 function _flag() {
     [ -n "$_DYNMOTD_FLAGS" ] || return 0
+
+    ## Warnings the admin chose to ignore (WARN_IGNORE) are not recorded.
+    ## The unquoted right side makes [[ == ]] match it as a pattern.
+    local pattern
+    for pattern in "${_WARN_IGNORE[@]}"; do
+        [[ "$1" == $pattern ]] && return 0
+    done
     printf '%s\t%s\n' "$1" "${2//$'\n'/ }" >&3
     return 0
 }
@@ -1374,11 +1576,21 @@ function _hostname_fqdn() {
 }
 
 
-## Prints the uptime as "up X days, Y hours".
-## uptime -p needs procps >= 3.3.0; older systems get the classic format.
+## Prints the uptime as "up X days, Y hours, Z minutes".
+## uptime -p needs procps >= 3.3.0; older and minimal systems get the same
+## text computed from /proc/uptime, which needs no tool at all.
 function _uptime_text() {
-    uptime -p 2>/dev/null \
-        || uptime | awk -F'up ' '{print $2}' | cut -d, -f1,2 | xargs
+    local text secs d h m
+    text=$(uptime -p 2>/dev/null)
+    if [ -z "$text" ] && read -r secs _ < /proc/uptime 2>/dev/null; then
+        secs=$(_to_int "${secs%%.*}" 0)
+        d=$(( secs / 86400 )); h=$(( secs % 86400 / 3600 )); m=$(( secs % 3600 / 60 ))
+        text="up"
+        (( d > 0 )) && text+=" ${d} days,"
+        (( d > 0 || h > 0 )) && text+=" ${h} hours,"
+        text+=" ${m} minutes"
+    fi
+    echo "${text:-unknown}"
 }
 
 
@@ -1453,10 +1665,11 @@ function _time_sync_state() {
 }
 
 
-## Prints an age in seconds as "N minutes", "N hours" or "N days".
+## Prints an age in seconds as "N seconds", "N minutes", "N hours" or "N days".
 function _human_age() {
     local s="$1"
-    if   (( s < 7200 ));   then echo "$(( s / 60 )) minutes"
+    if   (( s < 120 ));    then echo "${s} seconds"
+    elif (( s < 7200 ));   then echo "$(( s / 60 )) minutes"
     elif (( s < 172800 )); then echo "$(( s / 3600 )) hours"
     else                        echo "$(( s / 86400 )) days"
     fi
@@ -1639,6 +1852,14 @@ function show_system_info() {
         "$(_progress_bar "$MEMUSED" "$MEMMAX" "$bar_width" "$color")" \
         "${MEMAVAIL} MB free of ${MEMMAX} MB"
 
+    ## When memory is tight, name the three biggest consumers
+    if (( MEMORY_WARN_PERCENT > 0 && pct >= MEMORY_WARN_PERCENT )); then
+        local top
+        top=$(ps -eo rss=,comm= 2>/dev/null | sort -rn | head -n 3 \
+            | awk '{ printf "%s%s %.0f MB", (n++ ? ", " : ""), $2, $1 / 1024 }')
+        [ -n "$top" ] && _kv "Top Memory" "$top"
+    fi
+
     color="$F3"; pct=0
     (( SWAPMAX > 0 )) && pct=$(( SWAPUSED * 100 / SWAPMAX ))
     if (( SWAP_WARN_PERCENT > 0 && pct >= SWAP_WARN_PERCENT )); then
@@ -1681,7 +1902,8 @@ function _pkg_manager() {
 }
 
 
-## Prints the number of pending package updates for <package-manager>.
+## Prints the number of pending package updates for <package-manager>,
+## for apt followed by the number of security updates among them.
 ## Returns 1 without output if the count could not be determined (lock held,
 ## timeout, repository error), so a failed query is never shown or cached as 0.
 ## LC_ALL=C keeps the tool output parseable on non-English systems.
@@ -1690,7 +1912,9 @@ function _count_updates() {
     case "$1" in
         apt-get)
             out=$(_timeout 30 env LC_ALL=C apt-get -s -qq dist-upgrade 2>/dev/null) || return 1
-            grep -c '^Inst' <<< "$out"
+            ## Second number: updates from a security repository, e.g.
+            ## "Inst libssl3 [3.0.14] (3.0.15 Debian-Security:12/stable-security [amd64])"
+            echo "$(grep -c '^Inst' <<< "$out") $(grep '^Inst' <<< "$out" | grep -ci 'security')"
             ;;
         dnf|yum)
             ## check-update exit codes: 0 = no updates, 100 = updates, other = error
@@ -1728,6 +1952,7 @@ function show_update_info() {
     [ "$UPDATE_INFO" = "1" ] || [ "$UPDATE_ALWAYS" = "1" ] || return
 
     local UPDATES="Unknown"
+    local SECURITY=""
     local REBOOT_REQUIRED="Unknown"
     local REBOOT_PACKAGES="N/A"
     local mgr
@@ -1740,20 +1965,24 @@ function show_update_info() {
         ## The cache is refreshed when older than UPDATE_CACHE_HOURS hours, or
         ## when dpkg has installed/removed packages since it was written.
         local cache_file="${DYNMOTDDIR}/update_cache"
-        local cached="" count=""
+        local cached="" cached_sec="" count="" sec=""
 
         if (( UPDATE_CACHE_HOURS > 0 )) && [ -f "$cache_file" ] \
             && (( $(_file_age "$cache_file") < UPDATE_CACHE_HOURS * 3600 )) \
             && [ ! /var/lib/dpkg/status -nt "$cache_file" ]; then
-            read -r cached < "$cache_file"
-            [[ "$cached" =~ ^[0-9]+$ ]] && UPDATES="$cached"
+            read -r cached cached_sec < "$cache_file"
+            if [[ "$cached" =~ ^[0-9]+$ ]]; then
+                UPDATES="$cached"
+                SECURITY="$cached_sec"
+            fi
         fi
 
         if [ "$UPDATES" = "Unknown" ]; then
             ## Stays "Unknown" if the query fails (lock held, timeout, repo error)
-            if count=$(_count_updates "$mgr") && [[ "$count" =~ ^[0-9]+$ ]]; then
+            if read -r count sec <<< "$(_count_updates "$mgr")" && [[ "$count" =~ ^[0-9]+$ ]]; then
                 UPDATES="$count"
-                _write_cache "$cache_file" "$count"
+                SECURITY="$sec"
+                _write_cache "$cache_file" "${count}${sec:+ $sec}"
             fi
         fi
     fi
@@ -1813,10 +2042,18 @@ function show_update_info() {
     esac
 
     echo -e "\n$(_section_header "Update Info")"
-    if [[ "$UPDATES" =~ ^[0-9]+$ ]] && (( UPDATE_WARN_COUNT > 0 && UPDATES >= UPDATE_WARN_COUNT )); then
-        _kv_warn "Available Updates" "$UPDATES"
+    local update_text="$UPDATES" update_warn=0
+    if [[ "$UPDATES" =~ ^[0-9]+$ ]]; then
+        (( UPDATE_WARN_COUNT > 0 && UPDATES >= UPDATE_WARN_COUNT )) && update_warn=1
+        if [[ "$SECURITY" =~ ^[0-9]+$ ]] && (( SECURITY > 0 )); then
+            update_text="${UPDATES}, ${SECURITY} of them security updates"
+            [ "$UPDATE_SECURITY_WARN" = "1" ] && update_warn=1
+        fi
+    fi
+    if (( update_warn )); then
+        _kv_warn "Available Updates" "$update_text"
     else
-        _kv "Available Updates" "$UPDATES"
+        _kv "Available Updates" "$update_text"
     fi
     if [ "$REBOOT_REQUIRED" = "Yes" ]; then
         _kv_warn "Reboot Required" "Yes"
@@ -2538,30 +2775,14 @@ function _security_lines() {
         [ -n "$ports" ] && _kv "SSH Port" "$ports"
     fi
 
-    ## Failed logins since the last log rotation. /var/log/btmp can be very
-    ## large on an exposed host, so the count comes from the file size: every
-    ## record has the same size (384 bytes, or 400 on 64-bit architectures
-    ## without 32-bit compatibility such as arm64).
-    if [ -f /var/log/btmp ]; then
-        local size rec=0
-        size=$(stat -c %s /var/log/btmp 2>/dev/null)
-        size=$(_to_int "$size" 0)
-        if   (( size % 384 == 0 && size % 400 != 0 )); then rec=384
-        elif (( size % 400 == 0 && size % 384 != 0 )); then rec=400
-        elif (( size % 384 == 0 )); then
-            case "$(uname -m)" in
-                x86_64|i?86|arm*) rec=384 ;;
-                *)                rec=400 ;;
-            esac
-        fi
-        if (( rec > 0 )); then
-            local since=""
-            [ -f /var/log/btmp.1 ] && since=$(stat -c %y /var/log/btmp.1 2>/dev/null | cut -c1-10)
-            if [ -n "$since" ]; then
-                _kv "Failed Logins" "$(( size / rec )) since ${since}"
-            else
-                _kv "Failed Logins" "$(( size / rec ))"
-            fi
+    ## Failed logins since the last log rotation
+    local failed since=""
+    if failed=$(_btmp_count); then
+        [ -f /var/log/btmp.1 ] && since=$(stat -c %y /var/log/btmp.1 2>/dev/null | cut -c1-10)
+        if [ -n "$since" ]; then
+            _kv "Failed Logins" "${failed} since ${since}"
+        else
+            _kv "Failed Logins" "$failed"
         fi
     fi
 
@@ -2912,11 +3133,885 @@ function genconfig() {
 }
 
 
-## Display order — the single place that defines it. Every name needs a
-## function show_<name>_info.
-SECTIONS=(config system weather storage raid zfs lvm network user security
-          update environment failed_services docker certs backup fail2ban
-          maintenance version)
+## Wraps free text at word boundaries so no line exceeds 79 columns;
+## continuation lines are indented by <indent> spaces.
+## Usage: _wrap_text <indent> <text>
+function _wrap_text() {
+    local -a words
+    read -ra words <<< "$2"
+    _wrap_list "$1" "" "${words[@]}"
+}
+
+
+## Prints the terminal width in columns. COLUMNS is honored when it is set in
+## the environment (shells do not export it, so then it is deliberate),
+## otherwise the terminal is asked; 80 if nothing can tell.
+function _term_width() {
+    local w="${COLUMNS:-}"
+    [[ "$w" =~ ^[0-9]+$ ]] && (( w > 0 )) || w=$(stty size 2>/dev/null < /dev/tty | awk '{print $2}')
+    [[ "$w" =~ ^[0-9]+$ ]] && (( w > 0 )) || w=$(tput cols 2>/dev/null)
+    [[ "$w" =~ ^[0-9]+$ ]] && (( w > 0 )) || w=80
+    echo "$w"
+}
+
+
+## True if the terminal can be expected to display UTF-8.
+function _utf8_terminal() {
+    case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+        *[Uu][Tt][Ff]-8*|*[Uu][Tt][Ff]8*) return 0 ;;
+    esac
+    return 1
+}
+
+
+## Prints the number of failed logins recorded in /var/log/btmp, or nothing.
+## The file can be very large on an exposed host, so the count comes from the
+## file size: every record has the same size (384 bytes, or 400 on 64-bit
+## architectures without 32-bit compatibility such as arm64).
+function _btmp_count() {
+    [ -f /var/log/btmp ] || return 1
+    local size rec=0
+    size=$(stat -c %s /var/log/btmp 2>/dev/null)
+    size=$(_to_int "$size" 0)
+    if   (( size % 384 == 0 && size % 400 != 0 )); then rec=384
+    elif (( size % 400 == 0 && size % 384 != 0 )); then rec=400
+    elif (( size % 384 == 0 )); then
+        case "$(uname -m)" in
+            x86_64|i?86|arm*) rec=384 ;;
+            *)                rec=400 ;;
+        esac
+    fi
+    (( rec > 0 )) || return 1
+    echo $(( size / rec ))
+}
+
+
+function show_note_info() {
+    [ -n "$MOTD_NOTE" ] || return
+
+    ## A notice for everyone who logs in. Printed in the warning color so it
+    ## stands out, but it is not a warning.
+    echo -e "\n$(_section_header "Notice")"
+    _kv "Note" "$(_wrap_text $(( LABEL_WIDTH + 3 )) "$MOTD_NOTE")" "$F4"
+    printf "${F1}"
+}
+
+
+## State of the previous login, written by _save_state:
+##   T <epoch>            time of that login
+##   B <count>            failed logins recorded at that time
+##   U <count>            pending updates at that time
+##   W <label> <value>    one line per warning (tab-separated)
+STATEFILE="${DYNMOTDDIR}/last_state"
+
+## Remembers the current state for the next login. Called after all sections
+## have run, and only for an interactive run: a cron job or a monitoring call
+## must not reset "since last login".
+function _save_state() {
+    (( _IS_ROOT )) && [ -n "$_DYNMOTD_TMPDIR" ] || return 0
+    local tmp count updates=""
+    mkdir -p "$DYNMOTDDIR" 2>/dev/null || return 0
+    tmp=$(mktemp "${STATEFILE}.XXXXXX" 2>/dev/null) || return 0
+
+    count=$(_btmp_count)
+    [ -f "${DYNMOTDDIR}/update_cache" ] && read -r updates _ < "${DYNMOTDDIR}/update_cache"
+    {
+        printf 'T\t%s\n' "$(date +%s)"
+        [[ "$count" =~ ^[0-9]+$ ]]   && printf 'B\t%s\n' "$count"
+        [[ "$updates" =~ ^[0-9]+$ ]] && printf 'U\t%s\n' "$updates"
+        cat "${_DYNMOTD_TMPDIR}"/[0-9][0-9].warn 2>/dev/null | sed 's/^/W\t/'
+    } > "$tmp" 2>/dev/null
+    mv -f "$tmp" "$STATEFILE" 2>/dev/null || rm -f "$tmp"
+}
+
+
+## What changed since the previous login. Runs after the other sections
+## (see _run_sections), because it compares their warnings with the ones
+## remembered in STATEFILE.
+function show_changes_info() {
+    [ "$CHANGES_INFO" = "1" ] || return
+    (( _IS_ROOT )) && [ -f "$STATEFILE" ] && [ -n "$_DYNMOTD_TMPDIR" ] || return
+
+    local kind a b old_time="" old_btmp="" old_updates=""
+    local -a old_labels=()
+    while IFS=$'\t' read -r kind a b; do
+        case "$kind" in
+            T) old_time="$a" ;;
+            B) old_btmp="$a" ;;
+            U) old_updates="$a" ;;
+            W) old_labels+=("$a") ;;
+        esac
+    done < "$STATEFILE"
+    [[ "$old_time" =~ ^[0-9]+$ ]] || return
+
+    local -a cur_labels=() cur_values=()
+    while IFS=$'\t' read -r a b; do
+        [ -n "$a" ] || continue
+        cur_labels+=("$a"); cur_values+=("$b")
+    done < <(cat "${_DYNMOTD_TMPDIR}"/[0-9][0-9].warn 2>/dev/null)
+
+    echo -e "\n$(_section_header "Since Last Login")"
+
+    local now when changed=0
+    now=$(date +%s)
+    when=$(date -d "@${old_time}" '+%Y-%m-%d %H:%M' 2>/dev/null) || when=""
+    if [ -n "$when" ]; then
+        _kv "Last Login" "${when} ($(_human_age $(( now - old_time ))) ago)"
+    else
+        _kv "Last Login" "$(_human_age $(( now - old_time ))) ago"
+    fi
+
+    ## Failed logins: the counter restarts when the log is rotated
+    local cur_btmp diff
+    cur_btmp=$(_btmp_count)
+    if [[ "$cur_btmp" =~ ^[0-9]+$ ]] && [[ "$old_btmp" =~ ^[0-9]+$ ]]; then
+        diff=$(( cur_btmp - old_btmp ))
+        (( diff < 0 )) && diff=$cur_btmp
+        if (( diff > 0 )); then
+            _kv "Failed Logins" "${diff} new"
+            changed=1
+        fi
+    fi
+
+    local cur_updates=""
+    [ -f "${DYNMOTDDIR}/update_cache" ] && read -r cur_updates _ < "${DYNMOTDDIR}/update_cache"
+    if [[ "$cur_updates" =~ ^[0-9]+$ ]] && [[ "$old_updates" =~ ^[0-9]+$ ]] \
+        && (( cur_updates > old_updates )); then
+        _kv "Updates" "$(( cur_updates - old_updates )) new, ${cur_updates} pending"
+        changed=1
+    fi
+
+    ## Warnings that are new, and warnings that are gone
+    local i n found shown=0
+    for (( i = 0; i < ${#cur_labels[@]}; i++ )); do
+        found=0
+        for (( n = 0; n < ${#old_labels[@]}; n++ )); do
+            [ "${old_labels[$n]}" = "${cur_labels[$i]}" ] && { found=1; break; }
+        done
+        (( found )) && continue
+        changed=1
+        shown=$(( shown + 1 ))
+        (( shown <= 5 )) && _kv "New Warning" "${cur_labels[$i]}: ${cur_values[$i]}" "$F4"
+    done
+    (( shown > 5 )) && printf "${F1}%$(( LABEL_WIDTH + 3 ))s... and %d more\n" "" $(( shown - 5 ))
+
+    local -a resolved=()
+    for (( n = 0; n < ${#old_labels[@]}; n++ )); do
+        found=0
+        for (( i = 0; i < ${#cur_labels[@]}; i++ )); do
+            [ "${old_labels[$n]}" = "${cur_labels[$i]}" ] && { found=1; break; }
+        done
+        (( found )) || resolved+=("${old_labels[$n]}")
+    done
+    if (( ${#resolved[@]} > 0 )); then
+        _kv "Resolved" "$(_wrap_list $(( LABEL_WIDTH + 3 )) "," "${resolved[@]}")"
+        changed=1
+    fi
+
+    (( changed )) || _kv "Changes" "none"
+    printf "${F1}"
+}
+
+
+## Reads an RSS or Atom feed on stdin and prints the feed title on the first
+## line, followed by one line per item title. Works on the text level: the
+## feed is put on one line, a line break is inserted before every item, and
+## the first <title> of each line is taken. Needs no XML tool.
+function _news_titles() {
+    tr '\r\n\t' '   ' | tr -d '\000-\037\177' \
+        | sed -e 's/<item[ >]/\n&/g' -e 's/<entry[ >]/\n&/g' \
+        | awk '
+        {
+            i = index($0, "<title")
+            if (i == 0) { if (NR == 1) print ""; next }
+            t = substr($0, i)
+            j = index(t, ">");        if (j == 0) next
+            t = substr(t, j + 1)
+            k = index(t, "</title");  if (k == 0) next
+            t = substr(t, 1, k - 1)
+
+            gsub(/<!\[CDATA\[/, "", t); gsub(/\]\]>/, "", t)
+            gsub(/<[^>]*>/, "", t)
+            gsub(/&lt;/, "<", t);  gsub(/&gt;/, ">", t)
+            gsub(/&quot;/, "\"", t); gsub(/&apos;/, "\047", t); gsub(/&nbsp;/, " ", t)
+            gsub(/&#821[67];/, "\047", t); gsub(/&#39;/, "\047", t); gsub(/&#x27;/, "\047", t)
+            gsub(/&#822[01];/, "\"", t);   gsub(/&#34;/, "\"", t)
+            gsub(/&#821[12];/, "-", t)
+            gsub(/&#[0-9]+;/, "", t); gsub(/&#x[0-9A-Fa-f]+;/, "", t)
+            gsub(/&amp;/, "\\&", t)
+            gsub(/  +/, " ", t); sub(/^ /, "", t); sub(/ $/, "", t)
+            print t
+        }'
+}
+
+
+function show_news_info() {
+    _enabled NEWS_INFO || return
+
+    if [ -z "$NEWS_FEED_URL" ]; then
+        [ "$NEWS_INFO" = "1" ] || return
+        echo -e "\n$(_section_header "News")"
+        _kv_warn "News" "NEWS_FEED_URL is empty (hide: NEWS_INFO=\"0\")"
+        printf "${F1}"
+        return
+    fi
+    _section_ready NEWS_INFO "News" curl "News" || return
+
+    local cache_key
+    cache_key=$(printf '%s' "$NEWS_FEED_URL" | md5sum 2>/dev/null | awk '{print $1}')
+    [ -z "$cache_key" ] && cache_key="default"
+    local cache_file="${DYNMOTDDIR}/news_cache_${cache_key}"
+
+    local -a lines=()
+    [ -f "$cache_file" ] && mapfile -t lines < "$cache_file"
+
+    ## Fetch when there is no cache or it has expired. The feed comes from the
+    ## network: size and time are limited, control characters are removed by
+    ## _news_titles, and a failed or empty answer keeps the last good one.
+    if (( ${#lines[@]} < 2 )) || (( NEWS_CACHE_HOURS == 0 )) \
+        || (( $(_file_age "$cache_file") >= NEWS_CACHE_HOURS * 3600 )); then
+        local -a fresh
+        mapfile -t fresh < <(curl -fsSL --connect-timeout 2 --max-time 4 -A "dynmotd" \
+            "$NEWS_FEED_URL" 2>/dev/null | head -c 2000000 | _news_titles | head -n 51)
+        if (( ${#fresh[@]} >= 2 )); then
+            lines=("${fresh[@]}")
+            if (( _IS_ROOT )); then
+                local tmp
+                if tmp=$(mktemp "${cache_file}.XXXXXX" 2>/dev/null); then
+                    printf '%s\n' "${lines[@]}" > "$tmp"
+                    mv -f "$tmp" "$cache_file" 2>/dev/null || rm -f "$tmp"
+                fi
+            fi
+        fi
+    fi
+
+    ## Nothing to show: stay hidden, like the weather
+    (( ${#lines[@]} >= 2 )) || return
+
+    echo -e "\n$(_section_header "News")"
+    [ -n "${lines[0]}" ] && _kv "Source" "$(_wrap_text $(( LABEL_WIDTH + 3 )) "${lines[0]}")"
+
+    local i max=$(( ${#lines[@]} - 1 ))
+    (( max > NEWS_COUNT )) && max=$NEWS_COUNT
+    for (( i = 1; i <= max; i++ )); do
+        _kv "$i" "$(_wrap_text $(( LABEL_WIDTH + 3 )) "${lines[$i]}")"
+    done
+    printf "${F1}"
+}
+
+
+function show_hardware_info() {
+    _enabled HARDWARE_INFO || return
+
+    ## Temperatures straight from sysfs, in millidegrees Celsius
+    local f v max_temp=-1 sensors=0
+    for f in /sys/class/thermal/thermal_zone*/temp /sys/class/hwmon/hwmon*/temp*_input; do
+        [ -r "$f" ] || continue
+        v=$(cat "$f" 2>/dev/null)
+        [[ "$v" =~ ^[0-9]+$ ]] || continue
+        v=$(( 10#$v / 1000 ))
+        (( v > 0 && v < 200 )) || continue
+        sensors=$(( sensors + 1 ))
+        (( v > max_temp )) && max_temp=$v
+    done
+
+    ## SMART health per disk. Asking every disk takes time (and can wake
+    ## sleeping disks), so the result is cached: "<device>|<status>" per line.
+    local -a smart=()
+    if command -v smartctl >/dev/null 2>&1; then
+        local cache_file="${DYNMOTDDIR}/smart_cache"
+        if [ -f "$cache_file" ] && (( SMART_CACHE_HOURS > 0 )) \
+            && (( $(_file_age "$cache_file") < SMART_CACHE_HOURS * 3600 )); then
+            mapfile -t smart < "$cache_file"
+        else
+            local dev out status
+            while read -r dev _; do
+                [[ "$dev" == /dev/* ]] || continue
+                out=$(_timeout 10 smartctl -H "$dev" 2>/dev/null)
+                case "$out" in
+                    *"test result: PASSED"*|*"Health Status: OK"*) status="PASSED" ;;
+                    *"test result: FAILED"*|*"FAILED"*)            status="FAILED" ;;
+                    *) continue ;;      # no SMART support (virtual disk)
+                esac
+                smart+=("${dev}|${status}")
+            done < <(_timeout 10 smartctl --scan 2>/dev/null)
+            if (( _IS_ROOT )); then
+                local tmp
+                if tmp=$(mktemp "${cache_file}.XXXXXX" 2>/dev/null); then
+                    if (( ${#smart[@]} > 0 )); then printf '%s\n' "${smart[@]}" > "$tmp"; fi
+                    mv -f "$tmp" "$cache_file" 2>/dev/null || rm -f "$tmp"
+                fi
+            fi
+        fi
+    fi
+
+    if (( sensors == 0 && ${#smart[@]} == 0 )); then
+        [ "$HARDWARE_INFO" = "1" ] || return
+        echo -e "\n$(_section_header "Hardware")"
+        _kv "Hardware" "no temperature sensors or SMART data (hide: HARDWARE_INFO=\"0\")"
+        printf "${F1}"
+        return
+    fi
+
+    echo -e "\n$(_section_header "Hardware")"
+    if (( sensors > 0 )); then
+        if (( TEMP_WARN_CELSIUS > 0 && max_temp >= TEMP_WARN_CELSIUS )); then
+            _kv_warn "Temperature" "${max_temp}°C, highest of ${sensors} sensors"
+        else
+            _kv "Temperature" "${max_temp}°C, highest of ${sensors} sensors"
+        fi
+    fi
+    local entry
+    for entry in "${smart[@]}"; do
+        if [ "${entry##*|}" = "PASSED" ]; then
+            _kv "${entry%%|*}" "SMART health passed"
+        else
+            _kv_warn "${entry%%|*}" "SMART health FAILED"
+        fi
+    done
+    printf "${F1}"
+}
+
+
+function show_wireguard_info() {
+    _section_ready WIREGUARD_INFO "WireGuard" wg "WireGuard" || return
+
+    ## wg show all dump, tab-separated:
+    ##   interface line: iface, private key, public key, listen port, fwmark
+    ##   peer line:      iface, public key, preshared key, endpoint, allowed ips,
+    ##                   latest handshake (epoch), rx, tx, keepalive
+    ## Keys are never printed. A peer counts as active when its last handshake
+    ## is less than three minutes old (WireGuard renews it every two minutes
+    ## while traffic flows).
+    local -a rows
+    mapfile -t rows < <(_timeout 5 wg show all dump 2>/dev/null \
+        | awk -F'\t' -v now="$(date +%s)" '
+            NF == 5 { order[++n] = $1; port[$1] = $4; next }
+            NF >= 8 {
+                peers[$1]++
+                age = ($6 > 0) ? now - $6 : -1
+                if (age >= 0 && age <= 180) active[$1]++
+                allowed = $5; sub(/,.*/, "", allowed)
+                list[$1] = list[$1] "P|" allowed "|" $4 "|" age "\n"
+            }
+            END {
+                for (i = 1; i <= n; i++) {
+                    name = order[i]
+                    printf "I|%s|%s|%d|%d\n", name, port[name], peers[name], active[name]
+                    printf "%s", list[name]
+                }
+            }')
+
+    if (( ${#rows[@]} == 0 )); then
+        [ "$WIREGUARD_INFO" = "1" ] || return
+        echo -e "\n$(_section_header "WireGuard")"
+        _kv "WireGuard" "no interfaces"
+        printf "${F1}"
+        return
+    fi
+
+    echo -e "\n$(_section_header "WireGuard")"
+    local row kind a b c d shown=0 hidden=0 text
+    for row in "${rows[@]}"; do
+        IFS='|' read -r kind a b c d <<< "$row"
+        if [ "$kind" = "I" ]; then
+            (( hidden > 0 )) && printf "${F1}%$(( LABEL_WIDTH + 3 ))s... and %d more peers\n" "" "$hidden"
+            shown=0; hidden=0
+            text="${c} peers"
+            [ "$c" = "1" ] && text="1 peer"
+            _kv "$a" "${text}, ${d} active, port ${b}"
+            continue
+        fi
+        if (( WIREGUARD_MAX_PEERS > 0 && shown >= WIREGUARD_MAX_PEERS )); then
+            hidden=$(( hidden + 1 ))
+            continue
+        fi
+        shown=$(( shown + 1 ))
+        c=$(_to_int "${c#-}" 0)
+        if [ "${row##*|}" = "-1" ]; then
+            text="never connected"
+        else
+            text="handshake $(_human_age "$c") ago"
+        fi
+        [ "$b" != "(none)" ] && [ -n "$b" ] && text+=", ${b}"
+        _kv "${a:-peer}" "$text"
+    done
+    (( hidden > 0 )) && printf "${F1}%$(( LABEL_WIDTH + 3 ))s... and %d more peers\n" "" "$hidden"
+    printf "${F1}"
+}
+
+
+function show_watch_info() {
+    _enabled WATCH_INFO || return
+
+    if [ -z "${WATCH_SERVICES}${WATCH_PORTS}" ]; then
+        [ "$WATCH_INFO" = "1" ] || return
+        echo -e "\n$(_section_header "Watchlist")"
+        _kv_warn "Watchlist" "WATCH_SERVICES and WATCH_PORTS are empty (hide: WATCH_INFO=\"0\")"
+        printf "${F1}"
+        return
+    fi
+
+    local -a services ports states
+    read -ra services <<< "$WATCH_SERVICES"
+    read -ra ports <<< "$WATCH_PORTS"
+
+    local s field=$LABEL_WIDTH
+    for s in "${services[@]}"; do
+        (( ${#s} > field )) && field=${#s}
+    done
+
+    echo -e "\n$(_section_header "Watchlist")"
+
+    ## Services: systemd where available (one call for all units, one line of
+    ## output per unit), otherwise a process with exactly that name.
+    if (( ${#services[@]} > 0 )); then
+        if command -v systemctl >/dev/null 2>&1; then
+            mapfile -t states < <(_timeout 5 systemctl is-active "${services[@]}" 2>/dev/null)
+        fi
+        local i state
+        for (( i = 0; i < ${#services[@]}; i++ )); do
+            s="${services[$i]}"
+            if (( ${#states[@]} == ${#services[@]} )); then
+                state="${states[$i]}"
+            elif command -v pgrep >/dev/null 2>&1 && pgrep -x "$s" >/dev/null 2>&1; then
+                state="active"
+            else
+                state="not running"
+            fi
+            if [ "$state" = "active" ]; then
+                _kv "$s" "active" "" "$field"
+            else
+                _kv_warn "$s" "$state" "$field"
+            fi
+        done
+    fi
+
+    ## TCP ports: listening sockets from /proc/net/tcp and tcp6 (state 0A),
+    ## port in hex after the colon of the local address. Needs no tool.
+    if (( ${#ports[@]} > 0 )); then
+        local hex listening=" " p
+        while read -r hex; do
+            [[ "$hex" =~ ^[0-9A-Fa-f]+$ ]] && listening+="$(( 16#$hex )) "
+        done < <(awk 'FNR > 1 && $4 == "0A" { n = split($2, a, ":"); print a[n] }' \
+                     /proc/net/tcp /proc/net/tcp6 2>/dev/null | sort -u)
+        for p in "${ports[@]}"; do
+            p=$(_to_int "$p" 0)
+            if [ "$listening" = " " ]; then
+                _kv_warn "Port ${p}" "unknown, /proc/net/tcp is not readable" "$field"
+            elif [[ "$listening" == *" ${p} "* ]]; then
+                _kv "Port ${p}" "listening" "" "$field"
+            else
+                _kv_warn "Port ${p}" "not listening" "$field"
+            fi
+        done
+    fi
+    printf "${F1}"
+}
+
+
+## Counts the messages in a Postfix spool directory and prints
+## "<total> <deferred>". Counting queue files needs no running daemon and
+## works for a local Postfix as well as for a container volume on the host.
+function _postfix_spool_counts() {
+    local spool="$1" d n total=0 deferred=0
+    for d in incoming active deferred hold maildrop; do
+        [ -d "${spool}/${d}" ] || continue
+        n=$(_timeout 5 find "${spool}/${d}" -type f 2>/dev/null | wc -l)
+        n=$(_to_int "${n//[[:space:]]/}" 0)
+        total=$(( total + n ))
+        [ "$d" = "deferred" ] && deferred=$n
+    done
+    echo "$total $deferred"
+}
+
+
+function show_mailq_info() {
+    _enabled MAILQ_INFO || return
+
+    ## Where is the mail server? Tried in this order:
+    ##   1. Postfix on this host        -> count the spool files
+    ##   2. Exim on this host           -> exim -bpc
+    ##   3. Postfix in a Docker container (e.g. mailcow)
+    ##        a) its spool is a volume on the host -> count the spool files
+    ##        b) otherwise ask postqueue inside the container
+    local mta="" where="" total="" deferred=""
+
+    if [ -z "$MAILQ_CONTAINER" ] && [ -d /var/spool/postfix/deferred ] \
+        && { command -v postqueue >/dev/null 2>&1 || command -v postfix >/dev/null 2>&1; }; then
+        mta="Postfix"
+        read -r total deferred <<< "$(_postfix_spool_counts /var/spool/postfix)"
+    fi
+
+    if [ -z "$mta" ] && [ -z "$MAILQ_CONTAINER" ]; then
+        local exim_bin=""
+        command -v exim  >/dev/null 2>&1 && exim_bin="exim"
+        command -v exim4 >/dev/null 2>&1 && exim_bin="exim4"
+        if [ -n "$exim_bin" ]; then
+            total=$(_timeout 5 "$exim_bin" -bpc 2>/dev/null)
+            if [[ "$total" =~ ^[0-9]+$ ]]; then mta="Exim"; else total=""; fi
+        fi
+    fi
+
+    if [ -z "$mta" ] && command -v docker >/dev/null 2>&1; then
+        local -a candidates
+        if [ -n "$MAILQ_CONTAINER" ]; then
+            candidates=("$MAILQ_CONTAINER")
+        else
+            mapfile -t candidates < <(_timeout 5 docker ps --format '{{.Names}}' 2>/dev/null | grep -i 'postfix')
+        fi
+        local c src last
+        for c in "${candidates[@]}"; do
+            src=$(_timeout 5 docker inspect -f \
+                '{{range .Mounts}}{{if eq .Destination "/var/spool/postfix"}}{{.Source}}{{end}}{{end}}' \
+                "$c" 2>/dev/null)
+            if [ -n "$src" ] && [ -d "${src}/deferred" ]; then
+                mta="Postfix"; where="$c"
+                read -r total deferred <<< "$(_postfix_spool_counts "$src")"
+                break
+            fi
+            ## "Mail queue is empty" or "-- 3 Kbytes in 2 Requests."
+            last=$(_timeout 5 docker exec "$c" postqueue -p 2>/dev/null | tail -n 1)
+            case "$last" in
+                *"queue is empty"*)
+                    mta="Postfix"; where="$c"; total=0; break ;;
+                *" Request"*)
+                    total=$(awk '{ for (i = 1; i < NF; i++) if ($i == "in") print $(i+1) }' <<< "$last")
+                    if [[ "$total" =~ ^[0-9]+$ ]]; then mta="Postfix"; where="$c"; break; fi
+                    total="" ;;
+            esac
+        done
+    fi
+
+    if [ -z "$mta" ]; then
+        [ "$MAILQ_INFO" = "1" ] || return
+        echo -e "\n$(_section_header "Mail Queue")"
+        _kv_warn "Mail Queue" "no Postfix or Exim found (hide: MAILQ_INFO=\"0\")"
+        printf "${F1}"
+        return
+    fi
+
+    total=$(_to_int "$total" 0)
+    local text="empty"
+    if (( total > 0 )); then
+        text="${total} queued"
+        [[ "$deferred" =~ ^[0-9]+$ ]] && text+=", ${deferred} of them deferred"
+    fi
+
+    echo -e "\n$(_section_header "Mail Queue")"
+    if (( MAILQ_WARN_COUNT > 0 && total >= MAILQ_WARN_COUNT )); then
+        _kv_warn "$mta" "$text"
+    else
+        _kv "$mta" "$text"
+    fi
+    [ -n "$where" ] && _kv "Container" "$where"
+    printf "${F1}"
+}
+
+
+function show_kernel_log_info() {
+    _section_ready KERNEL_LOG_INFO "Kernel Log" dmesg "Kernel Log" || return
+
+    ## The kernel ring buffer since boot. --level is util-linux only; without
+    ## it (busybox) only the out-of-memory kills are counted.
+    local all errors="" n_err=0 n_oom=0
+    all=$(_timeout 5 dmesg 2>/dev/null) || all=""
+    if [ -z "$all" ]; then
+        [ "$KERNEL_LOG_INFO" = "1" ] || return
+        echo -e "\n$(_section_header "Kernel Log")"
+        _kv "Kernel Log" "not readable"
+        printf "${F1}"
+        return
+    fi
+
+    n_oom=$(grep -c 'Out of memory: Kill' <<< "$all")
+    if errors=$(_timeout 5 dmesg --level=err,crit,alert,emerg 2>/dev/null) && [ -n "$errors" ]; then
+        n_err=$(grep -c . <<< "$errors")
+    fi
+
+    if (( n_oom == 0 && n_err == 0 )); then
+        [ "$KERNEL_LOG_INFO" = "1" ] || return
+        echo -e "\n$(_section_header "Kernel Log")"
+        _kv "Kernel Log" "no errors since boot"
+        printf "${F1}"
+        return
+    fi
+
+    echo -e "\n$(_section_header "Kernel Log")"
+    (( n_oom > 0 )) && _kv_warn "OOM Kills" "${n_oom} since boot, the kernel ran out of memory"
+    if (( n_err > 0 )); then
+        _kv "Kernel Errors" "${n_err} since boot"
+        ## Most recent error without its timestamp, shortened to one line
+        local last
+        last=$(tail -n 1 <<< "$errors" | sed 's/^\[[^]]*\] *//' | tr -d '\000-\037\177')
+        (( ${#last} > 58 )) && last="${last:0:55}..."
+        [ -n "$last" ] && _kv "Last Error" "$last"
+    fi
+    printf "${F1}"
+}
+
+
+## Settings a user without root may see, for the reduced user view. The main
+## configuration is in root's home and not readable for them.
+PUBLICFILE="/etc/dynmotd-user.conf"
+
+## Writes PUBLICFILE when the user view is switched on and removes it when it
+## is off, so a default installation creates no extra file.
+function _write_public_config() {
+    if [ "$USER_MOTD" != "1" ]; then
+        rm -f "$PUBLICFILE" 2>/dev/null
+        return 0
+    fi
+    local tmp key
+    tmp=$(mktemp "${PUBLICFILE}.XXXXXX" 2>/dev/null) || return 1
+    {
+        echo "# Generated by dynmotd from ${CONFFILE}. Do not edit: it is rewritten"
+        echo "# whenever that file changes. It holds the settings of the reduced view"
+        echo "# for users without root (USER_MOTD)."
+        for key in USER_MOTD MOTD_LAYOUT MOTD_NOTE COLOR_SCHEME COLOR_LABEL COLOR_BORDER \
+                   COLOR_VALUE COLOR_WARN SYSFUNCTION SYSENV SYSSLA ENVIRONMENT_INFO \
+                   TIMESYNC_INFO DISK_WARN_PERCENT INODE_WARN_PERCENT MEMORY_WARN_PERCENT \
+                   SWAP_WARN_PERCENT LOAD_WARN_PERCENT; do
+            printf '%s="%s"\n' "$key" "${!key}"
+        done
+    } > "$tmp"
+    if chmod 644 "$tmp" && mv -f "$tmp" "$PUBLICFILE"; then
+        return 0
+    fi
+    rm -f "$tmp"
+    return 1
+}
+
+
+## Reduced view for users without root: only what needs no privileges and
+## reveals nothing about other users.
+function show_user_view() {
+    SECTIONS=(note system storage network environment version)
+    if ! _run_sections "${SECTIONS[@]}"; then
+        local s
+        for s in "${SECTIONS[@]}"; do
+            "show_${s}_info"
+        done
+        echo -e "${C_RESET}"
+        return
+    fi
+    _print_sections
+    _cleanup_sections
+    echo -e "${C_RESET}"
+}
+
+
+## Downloads a URL to stdout with curl or wget.
+function _fetch() {
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --connect-timeout 5 --max-time 30 "$1"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -T 30 -O - "$1"
+    else
+        return 127
+    fi
+}
+
+
+## --self-update: replaces the installed script with the current one from
+## SELF_UPDATE_URL. The download is only installed if it matches the published
+## SHA-256 checksum (<url>.sha256) and passes a syntax check; the configuration
+## is not touched.
+function self_update() {
+    local target="${DYNMOTD_INSTALL_PATH}/${DYNMOTD_FILENAME}"
+
+    if [ ! -f "$target" ]; then
+        echo "dynmotd is not installed at ${target}."
+        echo "Run: $(basename "$0") --install  for a full installation."
+        return 1
+    fi
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        echo "Error: sha256sum is needed to verify the download."
+        return 1
+    fi
+
+    local dir new sums expected actual
+    dir=$(mktemp -d 2>/dev/null) || { echo "Error: cannot create a temporary directory."; return 1; }
+    new="${dir}/dynmotd.sh"; sums="${dir}/dynmotd.sh.sha256"
+
+    echo "Source: ${SELF_UPDATE_URL}"
+    if ! _fetch "$SELF_UPDATE_URL" > "$new" 2>/dev/null || [ ! -s "$new" ]; then
+        echo "Error: download failed (curl or wget is needed, and network access)."
+        rm -rf "$dir"; return 1
+    fi
+    if ! _fetch "${SELF_UPDATE_URL}.sha256" > "$sums" 2>/dev/null || [ ! -s "$sums" ]; then
+        echo "Error: could not download the checksum file. Nothing was changed."
+        rm -rf "$dir"; return 1
+    fi
+
+    expected=$(awk '{print $1; exit}' "$sums")
+    actual=$(sha256sum "$new" | awk '{print $1}')
+    if ! [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || [ "$expected" != "$actual" ]; then
+        echo "Error: checksum mismatch, the download is incomplete or was altered."
+        echo "  expected: ${expected}"
+        echo "  actual:   ${actual}"
+        echo "Nothing was changed."
+        rm -rf "$dir"; return 1
+    fi
+    if [ "$(head -n 1 "$new")" != "#!/bin/bash" ] || ! bash -n "$new" 2>/dev/null; then
+        echo "Error: the download is not a valid script. Nothing was changed."
+        rm -rf "$dir"; return 1
+    fi
+
+    local new_version
+    new_version=$(sed -n 's/^VERSION="\(.*\)"$/\1/p' "$new" | head -n 1)
+    if [ "$(sha256sum "$target" | awk '{print $1}')" = "$actual" ]; then
+        echo "Already up to date: ${VERSION}"
+        rm -rf "$dir"; return 0
+    fi
+
+    local tmp
+    tmp=$(mktemp "${target}.XXXXXX" 2>/dev/null) || {
+        echo "Error: cannot write to $(dirname "$target")."
+        rm -rf "$dir"; return 1
+    }
+    if cat "$new" > "$tmp" && chmod 755 "$tmp" && mv -f "$tmp" "$target"; then
+        echo "Updated: ${VERSION} -> ${new_version:-unknown}"
+        echo "New settings, if any, are added to the configuration with: ${DYNMOTD_FILENAME} --genconfig"
+        rm -rf "$dir"; return 0
+    fi
+    rm -f "$tmp"; rm -rf "$dir"
+    echo "Error: could not replace ${target}."
+    return 1
+}
+
+
+## Prints the collected section outputs in the selected layout.
+function _print_sections() {
+    local layout="$MOTD_LAYOUT" width
+    width=$(_term_width)
+
+    ## auto: the dashboard needs room for at least two boxes side by side
+    if [ "$layout" = "auto" ]; then
+        layout="classic"
+        (( width >= 166 )) && layout="dashboard"
+    fi
+
+    if [ "$layout" = "dashboard" ] && _print_dashboard "$width"; then
+        return
+    fi
+    cat "${_DYNMOTD_TMPDIR}"/[0-9][0-9] 2>/dev/null
+}
+
+
+## Dashboard layout: every section becomes a box, the boxes are arranged in as
+## many columns as the terminal has room for, read top to bottom, then left to
+## right. One awk program does the layout so it stays fast.
+##
+## Widths are counted in bytes with LC_ALL=C on purpose: escape sequences and
+## the continuation bytes of UTF-8 characters are subtracted, which gives the
+## display width in every awk, including those without multi-byte support.
+function _print_dashboard() {
+    local width="$1"
+    local tl="+" tr="+" bl="+" br="+" hz="-" vt="|"
+    if _utf8_terminal; then
+        tl="┌"; tr="┐"; bl="└"; br="┘"; hz="─"; vt="│"
+    fi
+
+    cat "${_DYNMOTD_TMPDIR}"/[0-9][0-9] 2>/dev/null | LC_ALL=C awk \
+        -v termw="$width" -v ESC="$(printf '\033')" \
+        -v CLO="$(printf '\200')" -v CHI="$(printf '\277')" \
+        -v TL="$tl" -v TR="$tr" -v BL="$bl" -v BR="$br" -v HZ="$hz" -v VT="$vt" \
+        -v BC="$F2" -v TC="$F1" -v RS0="$C_RESET" '
+        function vis(s,   t) {
+            t = s
+            gsub(ESC "\\[[0-9;]*m", "", t)
+            gsub("[" CLO "-" CHI "]", "", t)
+            return length(t)
+        }
+        function rep(s, k,   r) { r = ""; while (k-- > 0) r = r s; return r }
+        BEGIN { n = 0; maxw = 0; footer = "" }
+        {
+            line = $0
+            plain = line
+            gsub(ESC "\\[[0-9;]*m", "", plain)
+
+            if (substr(plain, 1, 14) == "============[ ") {
+                n++
+                t = plain; sub(/^=+\[ /, "", t); sub(/ \]=*$/, "", t)
+                title[n] = t; cnt[n] = 0; blank = 0; carry = ""
+                next
+            }
+            if (plain ~ /^=+\[ .* \]==$/) { footer = line; n_done = 1; next }
+            if (n == 0 || n_done) next
+
+            if (plain ~ /^[ \t]*$/) { if (cnt[n] > 0) blank = 1; next }
+            if (blank) { cnt[n]++; text[n, cnt[n]] = ""; blank = 0 }
+
+            ## A wrapped line continues in the color of the line before it
+            cnt[n]++
+            text[n, cnt[n]] = carry line
+            rest = line
+            while (match(rest, ESC "\\[[0-9;]*m")) {
+                carry = substr(rest, RSTART, RLENGTH)
+                rest = substr(rest, RSTART + RLENGTH)
+            }
+            w = vis(line)
+            if (w > maxw) maxw = w
+        }
+        END {
+            if (n == 0) exit 1
+
+            inner = maxw
+            boxw = inner + 4
+            gap = 2
+            cols = int((termw + gap) / (boxw + gap))
+            if (cols < 1) cols = 1
+            if (cols > n) cols = n
+
+            ## Fill the columns in reading order with roughly equal heights
+            total = 0
+            for (i = 1; i <= n; i++) { h[i] = cnt[i] + 2; total += h[i] }
+            target = total / cols
+            cum = 0; c = 1
+            for (i = 1; i <= n; i++) {
+                want = int((cum + h[i] / 2) / target) + 1
+                if (want > cols) want = cols
+                if (want > c) c = want
+                cum += h[i]
+
+                rows[c]++
+                cell[c, rows[c]] = BC TL HZ " " TC title[i] " " BC rep(HZ, inner - length(title[i]) - 1) TR RS0
+                for (r = 1; r <= cnt[i]; r++) {
+                    s = text[i, r]
+                    rows[c]++
+                    cell[c, rows[c]] = BC VT " " RS0 s RS0 rep(" ", inner - vis(s)) " " BC VT RS0
+                }
+                rows[c]++
+                cell[c, rows[c]] = BC BL rep(HZ, inner + 2) BR RS0
+            }
+
+            maxrows = 0
+            for (c = 1; c <= cols; c++) if (rows[c] > maxrows) maxrows = rows[c]
+
+            print ""
+            for (r = 1; r <= maxrows; r++) {
+                out = ""
+                for (c = 1; c <= cols; c++) {
+                    if (r <= rows[c]) out = out cell[c, r]
+                    else if (c < cols) out = out rep(" ", boxw)
+                    if (c < cols) out = out rep(" ", gap)
+                }
+                sub(/ +$/, "", out)
+                print out
+            }
+            if (footer != "") { print ""; print footer }
+            print ""
+        }'
+}
+
+
+## Built-in display order. Every name needs a function show_<name>_info.
+## SECTION_ORDER in the configuration can rearrange it (_sanitize_config).
+SECTIONS=(note config changes system weather news storage raid zfs lvm hardware
+          network wireguard user security update environment failed_services
+          watch docker mailq certs backup kernel_log fail2ban maintenance
+          version)
 
 ## Temp directory of the current run; removed by the EXIT trap.
 _DYNMOTD_TMPDIR=""
@@ -2929,7 +4024,7 @@ _DYNMOTD_FLAGS=""
 ## be collected in order once all sections are done.
 ## Returns 1 if no temp directory could be created.
 function _run_sections() {
-    local s i=0 out
+    local s i=0 out late=""
 
     _DYNMOTD_TMPDIR=$(mktemp -d 2>/dev/null) || _DYNMOTD_TMPDIR=""
     [ -n "$_DYNMOTD_TMPDIR" ] || return 1
@@ -2938,10 +4033,18 @@ function _run_sections() {
     for s in "$@"; do
         i=$(( i + 1 ))
         out=$(printf '%s/%02d' "$_DYNMOTD_TMPDIR" "$i")
+        ## "changes" compares the warnings of all other sections, so it runs
+        ## after them but keeps its place in the output
+        if [ "$s" = "changes" ]; then
+            late="$out"
+            continue
+        fi
         "show_${s}_info" > "$out" 3> "${out}.warn" &
     done
 
     wait  ## wait for all sections to complete
+
+    [ -n "$late" ] && show_changes_info > "$late" 3> /dev/null
     _DYNMOTD_FLAGS=""
     return 0
 }
@@ -2960,6 +4063,13 @@ function _first_run_setup() {
     ## Create the configuration file on the first run (this also imports a
     ## pre-1.20 environment.cfg, which _write_config then removes)
     [ -f "$CONFFILE" ] || _write_config
+
+    ## Keep the copy for the user view in step with the configuration
+    if [ "$USER_MOTD" = "1" ]; then
+        [ -f "$PUBLICFILE" ] && [ ! "$CONFFILE" -nt "$PUBLICFILE" ] || _write_public_config
+    elif [ -f "$PUBLICFILE" ]; then
+        _write_public_config
+    fi
 
     ## Ask for the host description once; skipped without a terminal
     if [ "$ENVIRONMENT_INFO" = "1" ] && [ -z "${SYSFUNCTION}${SYSENV}${SYSSLA}" ] \
@@ -2989,7 +4099,9 @@ function show_info() {
         return
     fi
 
-    cat "${_DYNMOTD_TMPDIR}"/[0-9][0-9] 2>/dev/null
+    _print_sections
+    ## Remember this login for "Since Last Login" — interactive runs only
+    [ -t 1 ] && _save_state
     _cleanup_sections
     echo -e "${C_RESET}"
 }
@@ -3007,6 +4119,14 @@ function show_compact() {
         warn_labels+=("$label"); warn_values+=("$value")
         (( ${#label} > field )) && field=${#label}
     done < <(cat "${_DYNMOTD_TMPDIR}"/[0-9][0-9].warn 2>/dev/null)
+
+    ## "Since Last Login" is part of the compact view as well
+    local changes="" i=0 s
+    for s in "${SECTIONS[@]}"; do
+        i=$(( i + 1 ))
+        [ "$s" = "changes" ] && changes=$(cat "$(printf '%s/%02d' "$_DYNMOTD_TMPDIR" "$i")" 2>/dev/null)
+    done
+    [ -t 1 ] && _save_state
     _cleanup_sections
 
     echo -e "\n$(_section_header "Status")"
@@ -3025,6 +4145,7 @@ function show_compact() {
         done
     fi
     printf "${F1}"
+    [ -n "$changes" ] && printf '%s\n' "$changes"
 
     show_version_info
     echo -e "${C_RESET}"
@@ -3162,7 +4283,10 @@ function show_check() {
                  "Failed Services|FAILED_SERVICES_INFO|systemctl" \
                  "Docker|DOCKER_INFO|docker" \
                  "TLS Certificates|CERT_INFO|openssl" \
-                 "Fail2Ban|FAIL2BAN_INFO|fail2ban-client"; do
+                 "Fail2Ban|FAIL2BAN_INFO|fail2ban-client" \
+                 "News|NEWS_INFO|curl" \
+                 "WireGuard|WIREGUARD_INFO|wg" \
+                 "Kernel Log|KERNEL_LOG_INFO|dmesg"; do
         IFS='|' read -r label var tool <<< "$entry"
         state="${var}=\"${!var}\", ${tool}"
         if command -v "$tool" >/dev/null 2>&1; then
@@ -3187,7 +4311,9 @@ function show_check() {
                  "sshd|effective SSH settings" \
                  "last|most recent logins" \
                  "timedatectl|time synchronization (or chronyc, ntpstat)" \
-                 "md5sum|weather cache per city"; do
+                 "md5sum|weather and news cache" \
+                 "smartctl|SMART health of the disks" \
+                 "sha256sum|checksum for --self-update"; do
         IFS='|' read -r tool label <<< "$entry"
         if command -v "$tool" >/dev/null 2>&1 || [ -x "/usr/sbin/${tool}" ]; then
             _kv "$tool" "found: ${label}"
@@ -3201,6 +4327,9 @@ function show_check() {
 
 #### Main dispatcher
 
+## Users without root read the copy made for them instead of root's file
+(( _IS_ROOT )) || CONFFILE="$PUBLICFILE"
+
 ## Configuration: built-in defaults, overridden by the configuration file,
 ## then validated. _CONFIG_STATE: loaded | none (no usable file)
 _capture_defaults
@@ -3208,7 +4337,7 @@ if _load_config; then
     _CONFIG_STATE="loaded"
 else
     _CONFIG_STATE="none"
-    _import_legacy_env
+    (( _IS_ROOT )) && _import_legacy_env
 fi
 _sanitize_config
 _apply_colors
@@ -3216,6 +4345,24 @@ _apply_colors
 ## Remove the temp directory of show_info even when the run is interrupted
 trap '[ -n "$_DYNMOTD_TMPDIR" ] && rm -rf "$_DYNMOTD_TMPDIR"' EXIT
 trap 'exit 130' INT TERM HUP
+
+## Without root: the user view or the static MOTD, nothing else
+if (( ! _IS_ROOT )); then
+    case "${1:-}" in
+        -v|version|--version)
+            echo "$VERSION" ;;
+        "")
+            if [ "$USER_MOTD" = "1" ]; then
+                show_user_view
+            else
+                cat /etc/motd 2>/dev/null || echo "No message of the day available"
+            fi ;;
+        *)
+            echo "$(basename "$0"): this needs root."
+            exit 1 ;;
+    esac
+    exit 0
+fi
 
 if [ -z "$1" ]; then
     show_info
@@ -3256,6 +4403,19 @@ case "$1" in
         MOTD_MODE="full"
         show_info
     ;;
+    dashboard|--dashboard)
+        MOTD_MODE="full"
+        MOTD_LAYOUT="dashboard"
+        show_info
+    ;;
+    classic|--classic)
+        MOTD_MODE="full"
+        MOTD_LAYOUT="classic"
+        show_info
+    ;;
+    self-update|--self-update)
+        self_update || exit 1
+    ;;
     -i|install|--install)
         install
     ;;
@@ -3286,8 +4446,11 @@ case "$1" in
       -j | --json                   Print everything as JSON
            --compact                Show the summary and warnings only
            --full                   Show all sections
+           --classic                Show all sections one below the other
+           --dashboard              Show all sections as boxes side by side
       -i | --install                Install dynmotd and its dependencies
       -U | --update                 Update binary only (no setup, safe for Ansible/cron)
+           --self-update            Download and install the current version
       -u | --uninstall              Uninstall dynmotd, configuration and log
       -v | --version                Show version and exit
       -h | --help                   Show this help
