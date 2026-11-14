@@ -5,7 +5,7 @@
 # Multi-distribution MOTD script with automatic dependency management
 
 ## version
-VERSION="dynmotd v1.19.2"
+VERSION="dynmotd v1.19.3"
 
 ## configuration and logfile
 MAINLOG="/root/.dynmotd/maintenance.log"
@@ -1287,13 +1287,13 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
             shown=("${ips[@]}")
         fi
 
-        ## Field width = longest IP in this jail + 1 (min 1 space before =).
-        ## Guarantees = lands at the same column for every IP in the list.
-        local max_ip_len=0
+        ## IPs are right-aligned in the 16-char label column, so their = sits
+        ## exactly below the = of "Total Banned" / "Active Jails". Only IPv6
+        ## addresses longer than the column widen it (for the whole jail).
+        local ip_field=16
         for ip in "${shown[@]}"; do
-            (( ${#ip} > max_ip_len )) && max_ip_len=${#ip}
+            (( ${#ip} > ip_field )) && ip_field=${#ip}
         done
-        local ip_field=$(( max_ip_len + 1 ))
 
         ## Resolve all IPs in parallel; one result file per IP inside a private
         ## temp directory preserves the order. Without a temp directory the
@@ -1312,13 +1312,13 @@ ${F1}    Active Jails ${F2}= ${F3}${summary}${F1}"
             for ip in "${shown[@]}"; do
                 name=""
                 [ -f "${rdir}/${n}" ] && IFS= read -r name < "${rdir}/${n}"
-                printf "${F3} %-${ip_field}s${F2}= ${F3}%s\n" "$ip" "${name:---}"
+                printf "${F3}%${ip_field}s ${F2}= ${F3}%s\n" "$ip" "${name:---}"
                 n=$(( n + 1 ))
             done
             rm -rf "$rdir"
         else
             for ip in "${shown[@]}"; do
-                printf "${F3} %s\n" "$ip"
+                printf "${F3}%${ip_field}s\n" "$ip"
             done
         fi
 
@@ -1403,14 +1403,15 @@ function show_failed_services_info() {
     echo -e "\n$(_section_header "Failed Services")"
     printf "${F1}  Failed Services ${F2}= ${F4}%d\n" "${#units[@]}"
 
-    local max_len=0 u
+    ## Unit names are right-aligned in the 17-char label column, so their =
+    ## sits below the = of the counter line; longer names widen the column.
+    local field=17 u
     for u in "${units[@]}"; do
-        (( ${#u} > max_len )) && max_len=${#u}
+        (( ${#u} > field )) && field=${#u}
     done
-    local field=$(( max_len + 1 ))
 
     for u in "${units[@]}"; do
-        printf "${F4}    %-${field}s${F2}= ${F4}failed\n" "$u"
+        printf "${F4}%${field}s ${F2}= ${F4}failed\n" "$u"
     done
     printf "${F1}"
 }
